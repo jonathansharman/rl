@@ -27,6 +27,11 @@ pub type TileVector = Vector<i32>;
 pub type TilePoint = Point<i32>;
 pub type TileRectangle = Rectangle<i32>;
 
+pub const TILE_UP: TileVector = TileVector::new(0, -1);
+pub const TILE_DOWN: TileVector = TileVector::new(0, 1);
+pub const TILE_LEFT: TileVector = TileVector::new(-1, 0);
+pub const TILE_RIGHT: TileVector = TileVector::new(1, 0);
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Vector<T> {
 	pub x: T,
@@ -34,7 +39,7 @@ pub struct Vector<T> {
 }
 
 impl<T> Vector<T> {
-	pub fn new(x: T, y: T) -> Self {
+	pub const fn new(x: T, y: T) -> Self {
 		Vector { x, y }
 	}
 }
