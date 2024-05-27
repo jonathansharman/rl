@@ -2,9 +2,23 @@ use std::ops::{
 	Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign,
 };
 
+use ggez::glam::Vec2;
+
 pub type ScreenVector = Vector<f32>;
 pub type ScreenPoint = Point<f32>;
 pub type ScreenRectangle = Rectangle<f32>;
+
+impl From<ScreenVector> for Vec2 {
+	fn from(value: ScreenVector) -> Self {
+		Vec2::new(value.x, value.y)
+	}
+}
+
+impl From<ScreenPoint> for Vec2 {
+	fn from(value: ScreenPoint) -> Self {
+		Vec2::new(value.x, value.y)
+	}
+}
 
 pub type TileVector = Vector<i32>;
 pub type TilePoint = Point<i32>;
@@ -153,6 +167,7 @@ impl<T: Sub<Output = T>> Sub for Point<T> {
 	}
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rectangle<T> {
 	pub pos: Point<T>,
 	pub size: Vector<T>,

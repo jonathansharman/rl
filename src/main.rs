@@ -9,10 +9,13 @@ use coordinates::{
 	ScreenPoint, ScreenRectangle, ScreenVector, TilePoint, TileRectangle,
 	TileVector,
 };
-use macroquad::{
-	color,
-	input::{self, KeyCode},
-	shapes, window,
+use ggez::{
+	conf::{WindowMode, WindowSetup},
+	event::{self},
+	glam::Vec2,
+	graphics::{self, Canvas, Color, DrawMode, Rect},
+	input::keyboard::{KeyCode, KeyInput},
+	Context, GameResult,
 };
 use rand::prelude::*;
 use rand_pcg::Pcg32;
@@ -60,28 +63,45 @@ enum Tile {
 }
 
 impl Tile {
-	fn draw(&self, layout: &Layout, coords: TilePoint) {
+	fn draw(
+		&self,
+		ctx: &mut Context,
+		canvas: &mut Canvas,
+		layout: &Layout,
+		coords: TilePoint,
+	) -> GameResult {
 		let tile_layout = layout.tile_layout(coords);
 		match self {
 			Tile::Floor => {
-				shapes::draw_rectangle(
-					tile_layout.pos.x,
-					tile_layout.pos.y,
-					tile_layout.size.x,
-					tile_layout.size.y,
-					color::DARKGRAY,
-				);
+				let floor = graphics::Mesh::new_rectangle(
+					ctx,
+					DrawMode::fill(),
+					Rect {
+						x: tile_layout.pos.x,
+						y: tile_layout.pos.y,
+						w: tile_layout.size.x,
+						h: tile_layout.size.y,
+					},
+					Color::from_rgb(128, 128, 128),
+				)?;
+				canvas.draw(&floor, Vec2::new(0.0, 0.0));
 			}
 			Tile::Wall => {
-				shapes::draw_rectangle(
-					tile_layout.pos.x,
-					tile_layout.pos.y,
-					tile_layout.size.x,
-					tile_layout.size.y,
-					color::MAROON,
-				);
+				let wall = graphics::Mesh::new_rectangle(
+					ctx,
+					DrawMode::fill(),
+					Rect {
+						x: tile_layout.pos.x,
+						y: tile_layout.pos.y,
+						w: tile_layout.size.x,
+						h: tile_layout.size.y,
+					},
+					Color::from_rgb(128, 0, 0),
+				)?;
+				canvas.draw(&wall, Vec2::new(0.0, 0.0));
 			}
 		}
+		Ok(())
 	}
 }
 
@@ -99,20 +119,28 @@ struct LevelObject {
 }
 
 impl LevelObject {
-	fn draw(&self, layout: &Layout) {
+	fn draw(
+		&self,
+		ctx: &mut Context,
+		canvas: &mut Canvas,
+		layout: &Layout,
+	) -> GameResult {
 		let tile_layout = layout.tile_layout(self.coords);
 		match self.object {
 			Object::Player => {
-				shapes::draw_ellipse(
-					tile_layout.pos.x + 0.5 * tile_layout.size.x,
-					tile_layout.pos.y + 0.5 * tile_layout.size.y,
+				let wall = graphics::Mesh::new_ellipse(
+					ctx,
+					DrawMode::fill(),
+					Vec2::from(tile_layout.pos + tile_layout.size / 2.0),
 					0.5 * tile_layout.size.x,
 					0.5 * tile_layout.size.y,
-					0.0,
-					color::YELLOW,
-				);
+					1.0,
+					Color::YELLOW,
+				)?;
+				canvas.draw(&wall, Vec2::new(0.0, 0.0));
 			}
 		}
+		Ok(())
 	}
 }
 
@@ -130,7 +158,7 @@ struct Level {
 }
 
 impl Level {
-	fn generate(rng: &mut Pcg32) -> Level {
+	fn generate(viewport: ScreenRectangle, rng: &mut Pcg32) -> Level {
 		struct Room {
 			center: TilePoint,
 			radius: TileVector,
@@ -199,16 +227,7 @@ impl Level {
 			),
 		};
 		Level {
-			layout: Layout::new(
-				ScreenRectangle {
-					pos: ScreenPoint::new(0.0, 0.0),
-					size: ScreenVector::new(
-						window::screen_width(),
-						window::screen_height(),
-					),
-				},
-				tileport,
-			),
+			layout: Layout::new(viewport, tileport),
 			terrain,
 			objects_by_id: HashMap::new(),
 			object_ids_by_coords: HashMap::new(),
@@ -216,13 +235,14 @@ impl Level {
 		}
 	}
 
-	fn draw(&self) {
+	fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
 		for (&coords, tile) in &self.terrain {
-			tile.draw(&self.layout, coords);
+			tile.draw(ctx, canvas, &self.layout, coords)?;
 		}
 		for object in self.objects_by_id.values() {
-			object.draw(&self.layout);
+			object.draw(ctx, canvas, &self.layout)?;
 		}
+		Ok(())
 	}
 
 	fn spawn(&mut self, object: Object, coords: TilePoint) -> Id {
@@ -271,22 +291,61 @@ impl Level {
 	}
 }
 
-fn window_conf() -> window::Conf {
-	window::Conf {
-		window_title: "RL".to_string(),
-		window_width: 1280,
-		window_height: 720,
-		fullscreen: false,
-		window_resizable: true,
-		// TODO: icon
-		..Default::default()
+struct MainState {
+	player_id: Id,
+	level: Level,
+}
+
+impl event::EventHandler<ggez::GameError> for MainState {
+	fn update(&mut self, _ctx: &mut Context) -> GameResult {
+		Ok(())
+	}
+
+	fn key_down_event(
+		&mut self,
+		_ctx: &mut Context,
+		input: KeyInput,
+		_repeat: bool,
+	) -> GameResult {
+		let Some(keycode) = input.keycode else {
+			return Ok(());
+		};
+		match keycode {
+			KeyCode::Up => {
+				self.level
+					.translate_object(self.player_id, TileVector::new(0, -1));
+			}
+			KeyCode::Down => {
+				self.level
+					.translate_object(self.player_id, TileVector::new(0, 1));
+			}
+			KeyCode::Left => {
+				self.level
+					.translate_object(self.player_id, TileVector::new(-1, 0));
+			}
+			KeyCode::Right => {
+				self.level
+					.translate_object(self.player_id, TileVector::new(1, 0));
+			}
+			_ => {}
+		}
+		Ok(())
+	}
+
+	fn draw(&mut self, ctx: &mut Context) -> GameResult {
+		let mut canvas = graphics::Canvas::from_frame(ctx, Color::BLACK);
+		self.level.draw(ctx, &mut canvas)?;
+		canvas.finish(ctx)
 	}
 }
 
-#[macroquad::main(window_conf)]
-async fn main() {
+fn main() -> GameResult {
+	let viewport = ScreenRectangle {
+		pos: ScreenPoint::new(0.0, 0.0),
+		size: ScreenVector::new(1280.0, 720.0),
+	};
 	let mut rng: Pcg32 = Pcg32::from_entropy();
-	let mut level = Level::generate(&mut rng);
+	let mut level = Level::generate(viewport, &mut rng);
 	let player_coords = level
 		.terrain
 		.iter()
@@ -294,35 +353,18 @@ async fn main() {
 		.unwrap();
 	let player_id = level.spawn(Object::Player, player_coords);
 
-	let mut fullscreen = false;
-	loop {
-		window::clear_background(color::BLACK);
-
-		// Control fullscreen setting.
-		if (input::is_key_down(KeyCode::LeftAlt)
-			|| input::is_key_down(KeyCode::RightAlt))
-			&& input::is_key_pressed(KeyCode::Enter)
-		{
-			fullscreen = !fullscreen;
-			window::set_fullscreen(fullscreen);
-		}
-		if fullscreen && input::is_key_pressed(KeyCode::Escape) {
-			fullscreen = false;
-			window::set_fullscreen(false);
-		}
-
-		if input::is_key_pressed(KeyCode::Up) {
-			level.translate_object(player_id, TileVector::new(0, -1));
-		} else if input::is_key_pressed(KeyCode::Down) {
-			level.translate_object(player_id, TileVector::new(0, 1));
-		} else if input::is_key_pressed(KeyCode::Left) {
-			level.translate_object(player_id, TileVector::new(-1, 0));
-		} else if input::is_key_pressed(KeyCode::Right) {
-			level.translate_object(player_id, TileVector::new(1, 0));
-		}
-
-		level.draw();
-
-		window::next_frame().await
-	}
+	let (ctx, event_loop) = ggez::ContextBuilder::new("RL", "Jonathan Sharman")
+		.window_setup(WindowSetup {
+			title: "RL".to_string(),
+			// TODO: icon
+			..Default::default()
+		})
+		.window_mode(WindowMode {
+			width: viewport.size.x,
+			height: viewport.size.y,
+			resizable: true,
+			..Default::default()
+		})
+		.build()?;
+	event::run(ctx, event_loop, MainState { player_id, level });
 }
