@@ -208,8 +208,22 @@ async fn main() {
 		.unwrap();
 	let player_id = level.spawn(Object::Player, player_coords);
 
+	let mut fullscreen = false;
 	loop {
 		window::clear_background(color::BLACK);
+
+		// Control fullscreen setting.
+		if (input::is_key_down(KeyCode::LeftAlt)
+			|| input::is_key_down(KeyCode::RightAlt))
+			&& input::is_key_pressed(KeyCode::Enter)
+		{
+			fullscreen = !fullscreen;
+			window::set_fullscreen(fullscreen);
+		}
+		if fullscreen && input::is_key_pressed(KeyCode::Escape) {
+			fullscreen = false;
+			window::set_fullscreen(false);
+		}
 
 		if input::is_key_pressed(KeyCode::Up) {
 			level.translate_object(player_id, Vector::new(0, -1));
