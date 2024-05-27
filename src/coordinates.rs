@@ -1,88 +1,159 @@
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{
+	Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign,
+};
 
-pub struct Vector {
-	pub x: i32,
-	pub y: i32,
+pub type ScreenVector = Vector<f32>;
+pub type ScreenPoint = Point<f32>;
+pub type ScreenRectangle = Rectangle<f32>;
+
+pub type TileVector = Vector<i32>;
+pub type TilePoint = Point<i32>;
+pub type TileRectangle = Rectangle<i32>;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Vector<T> {
+	pub x: T,
+	pub y: T,
 }
 
-impl Vector {
-	pub fn new(x: i32, y: i32) -> Vector {
+impl<T> Vector<T> {
+	pub fn new(x: T, y: T) -> Self {
 		Vector { x, y }
 	}
 }
 
-impl AddAssign for Vector {
-	fn add_assign(&mut self, rhs: Vector) {
+impl<T: AddAssign<T>> AddAssign for Vector<T> {
+	fn add_assign(&mut self, rhs: Self) {
 		self.x += rhs.x;
 		self.y += rhs.y;
 	}
 }
 
-impl Add for Vector {
-	type Output = Vector;
+impl<T: Add<Output = T>> Add for Vector<T> {
+	type Output = Self;
 
-	fn add(mut self, rhs: Self) -> Vector {
-		self += rhs;
-		self
+	fn add(self, rhs: Self) -> Self {
+		Self {
+			x: self.x + rhs.x,
+			y: self.y + rhs.y,
+		}
 	}
 }
 
-impl SubAssign<Vector> for Vector {
-	fn sub_assign(&mut self, rhs: Vector) {
-		self.x += rhs.x;
-		self.y += rhs.y;
-	}
-}
-
-impl Sub for Vector {
-	type Output = Vector;
-
-	fn sub(mut self, rhs: Self) -> Vector {
-		self -= rhs;
-		self
-	}
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Point {
-	pub x: i32,
-	pub y: i32,
-}
-
-impl Point {
-	pub fn new(x: i32, y: i32) -> Point {
-		Point { x, y }
-	}
-}
-
-impl AddAssign<Vector> for Point {
-	fn add_assign(&mut self, rhs: Vector) {
-		self.x += rhs.x;
-		self.y += rhs.y;
-	}
-}
-
-impl Add<Vector> for Point {
-	type Output = Point;
-
-	fn add(mut self, rhs: Vector) -> Point {
-		self += rhs;
-		self
-	}
-}
-
-impl SubAssign<Vector> for Point {
-	fn sub_assign(&mut self, rhs: Vector) {
+impl<T: SubAssign<T>> SubAssign<Vector<T>> for Vector<T> {
+	fn sub_assign(&mut self, rhs: Self) {
 		self.x -= rhs.x;
 		self.y -= rhs.y;
 	}
 }
 
-impl Sub<Vector> for Point {
-	type Output = Point;
+impl<T: Sub<Output = T>> Sub for Vector<T> {
+	type Output = Self;
 
-	fn sub(mut self, rhs: Vector) -> Point {
-		self -= rhs;
-		self
+	fn sub(self, rhs: Self) -> Self {
+		Self {
+			x: self.x - rhs.x,
+			y: self.y - rhs.y,
+		}
 	}
+}
+
+impl<T: Clone + MulAssign<T>> MulAssign<T> for Vector<T> {
+	fn mul_assign(&mut self, rhs: T) {
+		self.x *= rhs.clone();
+		self.y *= rhs;
+	}
+}
+
+impl<T: Clone + Mul<Output = T>> Mul<T> for Vector<T> {
+	type Output = Self;
+
+	fn mul(self, rhs: T) -> Self {
+		Self {
+			x: self.x * rhs.clone(),
+			y: self.y * rhs,
+		}
+	}
+}
+
+impl<T: Clone + DivAssign<T>> DivAssign<T> for Vector<T> {
+	fn div_assign(&mut self, rhs: T) {
+		self.x /= rhs.clone();
+		self.y /= rhs;
+	}
+}
+
+impl<T: Clone + Div<Output = T>> Div<T> for Vector<T> {
+	type Output = Self;
+
+	fn div(self, rhs: T) -> Self {
+		Self {
+			x: self.x / rhs.clone(),
+			y: self.y / rhs,
+		}
+	}
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Point<T> {
+	pub x: T,
+	pub y: T,
+}
+
+impl<T> Point<T> {
+	pub fn new(x: T, y: T) -> Self {
+		Point { x, y }
+	}
+}
+
+impl<T: AddAssign<T>> AddAssign<Vector<T>> for Point<T> {
+	fn add_assign(&mut self, rhs: Vector<T>) {
+		self.x += rhs.x;
+		self.y += rhs.y;
+	}
+}
+
+impl<T: Add<Output = T>> Add<Vector<T>> for Point<T> {
+	type Output = Self;
+
+	fn add(self, rhs: Vector<T>) -> Self {
+		Self {
+			x: self.x + rhs.x,
+			y: self.y + rhs.y,
+		}
+	}
+}
+
+impl<T: SubAssign<T>> SubAssign<Vector<T>> for Point<T> {
+	fn sub_assign(&mut self, rhs: Vector<T>) {
+		self.x -= rhs.x;
+		self.y -= rhs.y;
+	}
+}
+
+impl<T: Sub<Output = T>> Sub<Vector<T>> for Point<T> {
+	type Output = Self;
+
+	fn sub(self, rhs: Vector<T>) -> Self {
+		Self {
+			x: self.x - rhs.x,
+			y: self.y - rhs.y,
+		}
+	}
+}
+
+impl<T: Sub<Output = T>> Sub for Point<T> {
+	type Output = Vector<T>;
+
+	fn sub(self, rhs: Self) -> Self::Output {
+		Self::Output {
+			x: self.x - rhs.x,
+			y: self.y - rhs.y,
+		}
+	}
+}
+
+pub struct Rectangle<T> {
+	pub pos: Point<T>,
+	pub size: Vector<T>,
 }

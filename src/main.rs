@@ -5,7 +5,10 @@ use std::{
 	hash::Hash,
 };
 
-use coordinates::{Point, Vector};
+use coordinates::{
+	ScreenPoint, ScreenRectangle, ScreenVector, TilePoint, TileRectangle,
+	TileVector,
+};
 use macroquad::{
 	color,
 	input::{self, KeyCode},
@@ -14,7 +17,41 @@ use macroquad::{
 use rand::prelude::*;
 use rand_pcg::Pcg32;
 
-const TILE_SIZE: f32 = 32.0;
+struct Layout {
+	// The region of the screen to map this layout to.
+	viewport: ScreenRectangle,
+	// Tile rectangle containing all the tiles that may need to be displayed.
+	tileport: TileRectangle,
+	// Tile width and height on-screen.
+	tile_size: ScreenVector,
+}
+
+impl Layout {
+	fn new(viewport: ScreenRectangle, tileport: TileRectangle) -> Layout {
+		let tile_size = ScreenVector::new(
+			viewport.size.x / tileport.size.x as f32,
+			viewport.size.y / tileport.size.y as f32,
+		);
+		Layout {
+			viewport,
+			tileport,
+			tile_size,
+		}
+	}
+
+	fn tile_layout(&self, coords: TilePoint) -> ScreenRectangle {
+		let pos = ScreenPoint::new(
+			self.viewport.pos.x
+				+ self.tile_size.x * (coords.x - self.tileport.pos.x) as f32,
+			self.viewport.pos.y
+				+ self.tile_size.y * (coords.y - self.tileport.pos.y) as f32,
+		);
+		ScreenRectangle {
+			pos,
+			size: self.tile_size - ScreenVector::new(1.0, 1.0),
+		}
+	}
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tile {
@@ -23,25 +60,24 @@ enum Tile {
 }
 
 impl Tile {
-	fn draw(&self, coords: Point) {
-		let x = (TILE_SIZE + 1.0) * coords.x as f32;
-		let y = (TILE_SIZE + 1.0) * coords.y as f32;
+	fn draw(&self, layout: &Layout, coords: TilePoint) {
+		let tile_layout = layout.tile_layout(coords);
 		match self {
 			Tile::Floor => {
 				shapes::draw_rectangle(
-					x,
-					y,
-					TILE_SIZE,
-					TILE_SIZE,
+					tile_layout.pos.x,
+					tile_layout.pos.y,
+					tile_layout.size.x,
+					tile_layout.size.y,
 					color::DARKGRAY,
 				);
 			}
 			Tile::Wall => {
 				shapes::draw_rectangle(
-					x,
-					y,
-					TILE_SIZE,
-					TILE_SIZE,
+					tile_layout.pos.x,
+					tile_layout.pos.y,
+					tile_layout.size.x,
+					tile_layout.size.y,
 					color::MAROON,
 				);
 			}
@@ -59,16 +95,22 @@ enum Object {
 struct LevelObject {
 	id: Id,
 	object: Object,
-	coords: Point,
+	coords: TilePoint,
 }
 
 impl LevelObject {
-	fn draw(&self) {
-		let x = (TILE_SIZE + 1.0) * self.coords.x as f32 + (0.5 * TILE_SIZE);
-		let y = (TILE_SIZE + 1.0) * self.coords.y as f32 + (0.5 * TILE_SIZE);
+	fn draw(&self, layout: &Layout) {
+		let tile_layout = layout.tile_layout(self.coords);
 		match self.object {
 			Object::Player => {
-				shapes::draw_circle(x, y, 0.5 * TILE_SIZE, color::YELLOW);
+				shapes::draw_ellipse(
+					tile_layout.pos.x + 0.5 * tile_layout.size.x,
+					tile_layout.pos.y + 0.5 * tile_layout.size.y,
+					0.5 * tile_layout.size.x,
+					0.5 * tile_layout.size.y,
+					0.0,
+					color::YELLOW,
+				);
 			}
 		}
 	}
@@ -80,23 +122,30 @@ enum Collision {
 }
 
 struct Level {
-	terrain: HashMap<Point, Tile>,
+	layout: Layout,
+	terrain: HashMap<TilePoint, Tile>,
 	objects_by_id: HashMap<Id, LevelObject>,
-	object_ids_by_coords: HashMap<Point, Id>,
+	object_ids_by_coords: HashMap<TilePoint, Id>,
 	next_object_id: Id,
 }
 
 impl Level {
 	fn generate(rng: &mut Pcg32) -> Level {
 		struct Room {
-			center: Point,
-			radius: Vector,
+			center: TilePoint,
+			radius: TileVector,
 		}
 
 		let rooms = std::iter::from_fn(|| {
 			Some(Room {
-				center: Point::new(rng.gen_range(0..30), rng.gen_range(0..30)),
-				radius: Vector::new(rng.gen_range(3..5), rng.gen_range(3..5)),
+				center: TilePoint::new(
+					rng.gen_range(0..30),
+					rng.gen_range(0..30),
+				),
+				radius: TileVector::new(
+					rng.gen_range(3..5),
+					rng.gen_range(3..5),
+				),
 			})
 		})
 		.take(5)
@@ -133,12 +182,33 @@ impl Level {
 			let y_max = room.center.y + room.radius.y;
 			for x in x_min..=x_max {
 				for y in y_min..=y_max {
-					terrain.insert(Point::new(x, y), Tile::Floor);
+					terrain.insert(TilePoint::new(x, y), Tile::Floor);
 				}
 			}
 		}
 
+		let min_tile_x = terrain.keys().map(|coords| coords.x).min().unwrap();
+		let min_tile_y = terrain.keys().map(|coords| coords.y).min().unwrap();
+		let max_tile_x = terrain.keys().map(|coords| coords.x).max().unwrap();
+		let max_tile_y = terrain.keys().map(|coords| coords.y).max().unwrap();
+		let tileport = TileRectangle {
+			pos: TilePoint::new(min_tile_x, min_tile_y),
+			size: TileVector::new(
+				max_tile_x - min_tile_x + 1,
+				max_tile_y - min_tile_y + 1,
+			),
+		};
 		Level {
+			layout: Layout::new(
+				ScreenRectangle {
+					pos: ScreenPoint::new(0.0, 0.0),
+					size: ScreenVector::new(
+						window::screen_width(),
+						window::screen_height(),
+					),
+				},
+				tileport,
+			),
 			terrain,
 			objects_by_id: HashMap::new(),
 			object_ids_by_coords: HashMap::new(),
@@ -148,14 +218,14 @@ impl Level {
 
 	fn draw(&self) {
 		for (&coords, tile) in &self.terrain {
-			tile.draw(coords);
+			tile.draw(&self.layout, coords);
 		}
 		for object in self.objects_by_id.values() {
-			object.draw();
+			object.draw(&self.layout);
 		}
 	}
 
-	fn spawn(&mut self, object: Object, coords: Point) -> Id {
+	fn spawn(&mut self, object: Object, coords: TilePoint) -> Id {
 		let id = self.next_object_id;
 		self.next_object_id.0 += 1;
 		self.objects_by_id
@@ -170,7 +240,7 @@ impl Level {
 	fn translate_object(
 		&mut self,
 		id: Id,
-		offset: Vector,
+		offset: TileVector,
 	) -> Option<Collision> {
 		let level_object = &self.objects_by_id[&id];
 		self.move_object_to(level_object.id, level_object.coords + offset)
@@ -178,7 +248,11 @@ impl Level {
 
 	// Moves the object identified by `id` to `coords` if there's an unoccupied,
 	// passable tile there. If the tile is occupied, this returns a collision.
-	fn move_object_to(&mut self, id: Id, coords: Point) -> Option<Collision> {
+	fn move_object_to(
+		&mut self,
+		id: Id,
+		coords: TilePoint,
+	) -> Option<Collision> {
 		let tile = self.terrain.get(&coords)?;
 		if let Tile::Wall = tile {
 			return Some(Collision::Tile(*tile));
@@ -197,7 +271,19 @@ impl Level {
 	}
 }
 
-#[macroquad::main("RL")]
+fn window_conf() -> window::Conf {
+	window::Conf {
+		window_title: "RL".to_string(),
+		window_width: 1280,
+		window_height: 720,
+		fullscreen: false,
+		window_resizable: true,
+		// TODO: icon
+		..Default::default()
+	}
+}
+
+#[macroquad::main(window_conf)]
 async fn main() {
 	let mut rng: Pcg32 = Pcg32::from_entropy();
 	let mut level = Level::generate(&mut rng);
@@ -226,13 +312,13 @@ async fn main() {
 		}
 
 		if input::is_key_pressed(KeyCode::Up) {
-			level.translate_object(player_id, Vector::new(0, -1));
+			level.translate_object(player_id, TileVector::new(0, -1));
 		} else if input::is_key_pressed(KeyCode::Down) {
-			level.translate_object(player_id, Vector::new(0, 1));
+			level.translate_object(player_id, TileVector::new(0, 1));
 		} else if input::is_key_pressed(KeyCode::Left) {
-			level.translate_object(player_id, Vector::new(-1, 0));
+			level.translate_object(player_id, TileVector::new(-1, 0));
 		} else if input::is_key_pressed(KeyCode::Right) {
-			level.translate_object(player_id, Vector::new(1, 0));
+			level.translate_object(player_id, TileVector::new(1, 0));
 		}
 
 		level.draw();
