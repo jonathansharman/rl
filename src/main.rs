@@ -167,8 +167,8 @@ impl Level {
 		let rooms = std::iter::from_fn(|| {
 			Some(Room {
 				center: TilePoint::new(
-					rng.gen_range(0..30),
-					rng.gen_range(0..30),
+					rng.gen_range(0..64),
+					rng.gen_range(0..36),
 				),
 				radius: TileVector::new(
 					rng.gen_range(3..5),
@@ -180,37 +180,58 @@ impl Level {
 		.collect::<Vec<_>>();
 
 		let mut terrain = HashMap::new();
-		// Connect each room to each other.
-		for (i, room1) in rooms.iter().enumerate() {
-			for room2 in rooms.iter().skip(i) {
-				let mut coords = room1.center;
-				while coords.x < room2.center.x {
-					terrain.insert(coords, Tile::Floor);
-					coords.x += 1;
-				}
-				while coords.x > room2.center.x {
-					terrain.insert(coords, Tile::Floor);
-					coords.x -= 1;
-				}
-				while coords.y < room2.center.y {
-					terrain.insert(coords, Tile::Floor);
-					coords.y += 1;
-				}
-				while coords.y > room2.center.y {
-					terrain.insert(coords, Tile::Floor);
-					coords.y -= 1;
-				}
-			}
-		}
 		// Open the floor of each room.
-		for room in rooms {
+		for room in rooms.iter() {
 			let x_min = room.center.x - room.radius.x;
 			let x_max = room.center.x + room.radius.x;
 			let y_min = room.center.y - room.radius.y;
 			let y_max = room.center.y + room.radius.y;
 			for x in x_min..=x_max {
 				for y in y_min..=y_max {
-					terrain.insert(TilePoint::new(x, y), Tile::Floor);
+					let tile =
+						if x == x_min || x == x_max || y == y_min || y == y_max
+						{
+							Tile::Wall
+						} else {
+							Tile::Floor
+						};
+					terrain.insert(TilePoint::new(x, y), tile);
+				}
+			}
+		}
+		// Connect each room to each other.
+		let make_floor = |terrain: &mut HashMap<TilePoint, Tile>,
+		                  coords: TilePoint| {
+			for x in coords.x - 1..=coords.x + 1 {
+				for y in coords.y - 1..=coords.y + 1 {
+					if x == coords.x && y == coords.y {
+						terrain.insert(coords, Tile::Floor);
+					} else {
+						terrain
+							.entry(TilePoint::new(x, y))
+							.or_insert(Tile::Wall);
+					}
+				}
+			}
+		};
+		for (i, room1) in rooms.iter().enumerate() {
+			for room2 in rooms.iter().skip(i) {
+				let mut coords = room1.center;
+				while coords.x < room2.center.x {
+					make_floor(&mut terrain, coords);
+					coords.x += 1;
+				}
+				while coords.x > room2.center.x {
+					make_floor(&mut terrain, coords);
+					coords.x -= 1;
+				}
+				while coords.y < room2.center.y {
+					make_floor(&mut terrain, coords);
+					coords.y += 1;
+				}
+				while coords.y > room2.center.y {
+					make_floor(&mut terrain, coords);
+					coords.y -= 1;
 				}
 			}
 		}
