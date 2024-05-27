@@ -2,7 +2,10 @@ use std::ops::{
 	Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign,
 };
 
-use ggez::glam::Vec2;
+use ggez::{
+	glam::Vec2,
+	mint::{Point2, Vector2},
+};
 
 pub type ScreenVector = Vector<f32>;
 pub type ScreenPoint = Point<f32>;
@@ -108,6 +111,15 @@ impl<T: Clone + Div<Output = T>> Div<T> for Vector<T> {
 	}
 }
 
+impl<T> From<Vector<T>> for Vector2<T> {
+	fn from(value: Vector<T>) -> Self {
+		Self {
+			x: value.x,
+			y: value.y,
+		}
+	}
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Point<T> {
 	pub x: T,
@@ -163,6 +175,15 @@ impl<T: Sub<Output = T>> Sub for Point<T> {
 		Self::Output {
 			x: self.x - rhs.x,
 			y: self.y - rhs.y,
+		}
+	}
+}
+
+impl<T> From<Point<T>> for Point2<T> {
+	fn from(value: Point<T>) -> Self {
+		Self {
+			x: value.x,
+			y: value.y,
 		}
 	}
 }

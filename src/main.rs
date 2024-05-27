@@ -1,4 +1,5 @@
 mod coordinates;
+mod meshes;
 
 use std::{
 	collections::{hash_map::Entry, HashMap},
@@ -11,12 +12,12 @@ use coordinates::{
 };
 use ggez::{
 	conf::{WindowMode, WindowSetup},
-	event::{self},
-	glam::Vec2,
-	graphics::{self, Canvas, Color, DrawMode, Rect},
+	event,
+	graphics::{self, Canvas, Color, DrawParam},
 	input::keyboard::{KeyCode, KeyInput},
 	Context, GameResult,
 };
+use meshes::Meshes;
 use rand::prelude::*;
 use rand_pcg::Pcg32;
 
@@ -65,40 +66,28 @@ enum Tile {
 impl Tile {
 	fn draw(
 		&self,
-		ctx: &mut Context,
 		canvas: &mut Canvas,
+		meshes: &Meshes,
 		layout: &Layout,
 		coords: TilePoint,
 	) -> GameResult {
 		let tile_layout = layout.tile_layout(coords);
 		match self {
 			Tile::Floor => {
-				let floor = graphics::Mesh::new_rectangle(
-					ctx,
-					DrawMode::fill(),
-					Rect {
-						x: tile_layout.pos.x,
-						y: tile_layout.pos.y,
-						w: tile_layout.size.x,
-						h: tile_layout.size.y,
-					},
-					Color::from_rgb(128, 128, 128),
-				)?;
-				canvas.draw(&floor, Vec2::new(0.0, 0.0));
+				canvas.draw(
+					&meshes.floor,
+					DrawParam::new()
+						.dest(tile_layout.pos)
+						.scale(tile_layout.size),
+				);
 			}
 			Tile::Wall => {
-				let wall = graphics::Mesh::new_rectangle(
-					ctx,
-					DrawMode::fill(),
-					Rect {
-						x: tile_layout.pos.x,
-						y: tile_layout.pos.y,
-						w: tile_layout.size.x,
-						h: tile_layout.size.y,
-					},
-					Color::from_rgb(128, 0, 0),
-				)?;
-				canvas.draw(&wall, Vec2::new(0.0, 0.0));
+				canvas.draw(
+					&meshes.wall,
+					DrawParam::new()
+						.dest(tile_layout.pos)
+						.scale(tile_layout.size),
+				);
 			}
 		}
 		Ok(())
@@ -121,23 +110,19 @@ struct LevelObject {
 impl LevelObject {
 	fn draw(
 		&self,
-		ctx: &mut Context,
 		canvas: &mut Canvas,
+		meshes: &Meshes,
 		layout: &Layout,
 	) -> GameResult {
 		let tile_layout = layout.tile_layout(self.coords);
 		match self.object {
 			Object::Player => {
-				let wall = graphics::Mesh::new_ellipse(
-					ctx,
-					DrawMode::fill(),
-					Vec2::from(tile_layout.pos + tile_layout.size / 2.0),
-					0.5 * tile_layout.size.x,
-					0.5 * tile_layout.size.y,
-					1.0,
-					Color::YELLOW,
-				)?;
-				canvas.draw(&wall, Vec2::new(0.0, 0.0));
+				canvas.draw(
+					&meshes.player,
+					DrawParam::new()
+						.dest(tile_layout.pos + tile_layout.size / 2.0)
+						.scale(tile_layout.size),
+				);
 			}
 		}
 		Ok(())
@@ -180,26 +165,6 @@ impl Level {
 		.collect::<Vec<_>>();
 
 		let mut terrain = HashMap::new();
-		// Open the floor of each room.
-		for room in rooms.iter() {
-			let x_min = room.center.x - room.radius.x;
-			let x_max = room.center.x + room.radius.x;
-			let y_min = room.center.y - room.radius.y;
-			let y_max = room.center.y + room.radius.y;
-			for x in x_min..=x_max {
-				for y in y_min..=y_max {
-					let tile =
-						if x == x_min || x == x_max || y == y_min || y == y_max
-						{
-							Tile::Wall
-						} else {
-							Tile::Floor
-						};
-					terrain.insert(TilePoint::new(x, y), tile);
-				}
-			}
-		}
-		// Connect each room to each other.
 		let make_floor = |terrain: &mut HashMap<TilePoint, Tile>,
 		                  coords: TilePoint| {
 			for x in coords.x - 1..=coords.x + 1 {
@@ -214,6 +179,19 @@ impl Level {
 				}
 			}
 		};
+		// Open the floor of each room.
+		for room in rooms.iter() {
+			let x_min = room.center.x - room.radius.x;
+			let x_max = room.center.x + room.radius.x;
+			let y_min = room.center.y - room.radius.y;
+			let y_max = room.center.y + room.radius.y;
+			for x in x_min..=x_max {
+				for y in y_min..=y_max {
+					make_floor(&mut terrain, TilePoint::new(x, y));
+				}
+			}
+		}
+		// Connect each room to each other.
 		for (i, room1) in rooms.iter().enumerate() {
 			for room2 in rooms.iter().skip(i) {
 				let mut coords = room1.center;
@@ -256,12 +234,12 @@ impl Level {
 		}
 	}
 
-	fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
+	fn draw(&self, canvas: &mut Canvas, meshes: &Meshes) -> GameResult {
 		for (&coords, tile) in &self.terrain {
-			tile.draw(ctx, canvas, &self.layout, coords)?;
+			tile.draw(canvas, meshes, &self.layout, coords)?;
 		}
 		for object in self.objects_by_id.values() {
-			object.draw(ctx, canvas, &self.layout)?;
+			object.draw(canvas, meshes, &self.layout)?;
 		}
 		Ok(())
 	}
@@ -315,6 +293,7 @@ impl Level {
 struct MainState {
 	player_id: Id,
 	level: Level,
+	meshes: Meshes,
 }
 
 impl event::EventHandler<ggez::GameError> for MainState {
@@ -355,7 +334,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
 
 	fn draw(&mut self, ctx: &mut Context) -> GameResult {
 		let mut canvas = graphics::Canvas::from_frame(ctx, Color::BLACK);
-		self.level.draw(ctx, &mut canvas)?;
+		self.level.draw(&mut canvas, &self.meshes)?;
 		canvas.finish(ctx)
 	}
 }
@@ -374,18 +353,25 @@ fn main() -> GameResult {
 		.unwrap();
 	let player_id = level.spawn(Object::Player, player_coords);
 
-	let (ctx, event_loop) = ggez::ContextBuilder::new("RL", "Jonathan Sharman")
-		.window_setup(WindowSetup {
-			title: "RL".to_string(),
-			// TODO: icon
-			..Default::default()
-		})
-		.window_mode(WindowMode {
-			width: viewport.size.x,
-			height: viewport.size.y,
-			resizable: true,
-			..Default::default()
-		})
-		.build()?;
-	event::run(ctx, event_loop, MainState { player_id, level });
+	let (mut ctx, event_loop) =
+		ggez::ContextBuilder::new("RL", "Jonathan Sharman")
+			.window_setup(WindowSetup {
+				title: "RL".to_string(),
+				// TODO: icon
+				..Default::default()
+			})
+			.window_mode(WindowMode {
+				width: viewport.size.x,
+				height: viewport.size.y,
+				resizable: true,
+				..Default::default()
+			})
+			.build()?;
+	let meshes = Meshes::new(&mut ctx)?;
+	let state = MainState {
+		player_id,
+		level,
+		meshes,
+	};
+	event::run(ctx, event_loop, state);
 }
