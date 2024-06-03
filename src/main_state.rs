@@ -37,15 +37,19 @@ impl event::EventHandler<ggez::GameError> for MainState {
 			}
 			KeyCode::Up => {
 				self.level.translate_object(self.player_id, TILE_UP);
+				self.level.update_vision(self.player_id);
 			}
 			KeyCode::Down => {
 				self.level.translate_object(self.player_id, TILE_DOWN);
+				self.level.update_vision(self.player_id);
 			}
 			KeyCode::Left => {
 				self.level.translate_object(self.player_id, TILE_LEFT);
+				self.level.update_vision(self.player_id);
 			}
 			KeyCode::Right => {
 				self.level.translate_object(self.player_id, TILE_RIGHT);
+				self.level.update_vision(self.player_id);
 			}
 			_ => {}
 		}

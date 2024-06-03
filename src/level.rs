@@ -1,7 +1,10 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+	collections::{hash_map::Entry, HashMap, HashSet},
+	hash::Hash,
+};
 
 use ggez::{
-	graphics::{Canvas, DrawParam},
+	graphics::{Canvas, Color, DrawParam},
 	GameResult,
 };
 use rand::Rng;
@@ -51,6 +54,11 @@ impl Layout {
 	}
 }
 
+enum Perception {
+	Seen,
+	Remembered,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tile {
 	Floor,
@@ -64,7 +72,12 @@ impl Tile {
 		meshes: &Meshes,
 		layout: &Layout,
 		coords: TilePoint,
+		perception: Perception,
 	) -> GameResult {
+		let color = match perception {
+			Perception::Seen => Color::WHITE,
+			Perception::Remembered => Color::from_rgba(255, 255, 255, 128),
+		};
 		let tile_layout = layout.tile_layout(coords);
 		match self {
 			Tile::Floor => {
@@ -72,7 +85,8 @@ impl Tile {
 					&meshes.floor,
 					DrawParam::new()
 						.dest(tile_layout.pos)
-						.scale(tile_layout.size),
+						.scale(tile_layout.size)
+						.color(color),
 				);
 			}
 			Tile::Wall => {
@@ -80,7 +94,8 @@ impl Tile {
 					&meshes.wall,
 					DrawParam::new()
 						.dest(tile_layout.pos)
-						.scale(tile_layout.size),
+						.scale(tile_layout.size)
+						.color(color),
 				);
 			}
 		}
@@ -134,6 +149,10 @@ pub struct Level {
 	objects_by_id: HashMap<Id, LevelObject>,
 	object_ids_by_coords: HashMap<TilePoint, Id>,
 	next_object_id: Id,
+	/// Points the player can currently see.
+	vision: HashSet<TilePoint>,
+	/// Tiles the player remembers seeing.
+	memory: HashMap<TilePoint, Tile>,
 }
 
 impl Level {
@@ -225,15 +244,54 @@ impl Level {
 			objects_by_id: HashMap::new(),
 			object_ids_by_coords: HashMap::new(),
 			next_object_id: Id(0),
+			vision: HashSet::new(),
+			memory: HashMap::new(),
+		}
+	}
+
+	pub fn update_vision(&mut self, player_id: Id) {
+		self.vision.clear();
+		let coords = self.objects_by_id[&player_id].coords;
+		for x in coords.x - 5..=coords.x + 5 {
+			for y in coords.y - 5..=coords.y + 5 {
+				let coords = TilePoint::new(x, y);
+				self.vision.insert(coords);
+				if let Some(tile) = self.terrain.get(&coords) {
+					self.memory.insert(coords, *tile);
+				}
+			}
 		}
 	}
 
 	pub fn draw(&self, canvas: &mut Canvas, meshes: &Meshes) -> GameResult {
-		for (&coords, tile) in &self.terrain {
-			tile.draw(canvas, meshes, &self.layout, coords)?;
+		// Draw all remembered tiles that are not currently visible.
+		for (coords, tile) in &self.memory {
+			if !self.vision.contains(coords) {
+				tile.draw(
+					canvas,
+					meshes,
+					&self.layout,
+					*coords,
+					Perception::Remembered,
+				)?;
+			}
+		}
+		// Draw visible tiles and objects.
+		for (coords, tile) in &self.terrain {
+			if self.vision.contains(coords) {
+				tile.draw(
+					canvas,
+					meshes,
+					&self.layout,
+					*coords,
+					Perception::Seen,
+				)?;
+			}
 		}
 		for object in self.objects_by_id.values() {
-			object.draw(canvas, meshes, &self.layout)?;
+			if self.vision.contains(&object.coords) {
+				object.draw(canvas, meshes, &self.layout)?;
+			}
 		}
 		Ok(())
 	}

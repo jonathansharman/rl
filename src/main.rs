@@ -2,6 +2,7 @@ mod coordinates;
 mod level;
 mod main_state;
 mod meshes;
+mod vision;
 
 use coordinates::{ScreenPoint, ScreenRectangle, ScreenVector};
 use ggez::{
@@ -22,6 +23,7 @@ fn main() -> GameResult {
 	let mut rng: Pcg32 = Pcg32::from_entropy();
 	let mut level = Level::generate(viewport, &mut rng);
 	let player_id = level.spawn_player();
+	level.update_vision(player_id);
 
 	let (mut ctx, event_loop) =
 		ggez::ContextBuilder::new("RL", "Jonathan Sharman")
