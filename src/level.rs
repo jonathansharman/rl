@@ -16,6 +16,7 @@ use crate::{
 		TileVector,
 	},
 	meshes::Meshes,
+	vision,
 };
 
 struct Layout {
@@ -76,7 +77,7 @@ impl Tile {
 	) -> GameResult {
 		let color = match perception {
 			Perception::Seen => Color::WHITE,
-			Perception::Remembered => Color::from_rgba(255, 255, 255, 128),
+			Perception::Remembered => Color::from_rgba(255, 255, 255, 64),
 		};
 		let tile_layout = layout.tile_layout(coords);
 		match self {
@@ -249,16 +250,15 @@ impl Level {
 		}
 	}
 
+	/// Updates vision and memory according to the given player's field of view.
 	pub fn update_vision(&mut self, player_id: Id) {
-		self.vision.clear();
-		let coords = self.objects_by_id[&player_id].coords;
-		for x in coords.x - 5..=coords.x + 5 {
-			for y in coords.y - 5..=coords.y + 5 {
-				let coords = TilePoint::new(x, y);
-				self.vision.insert(coords);
-				if let Some(tile) = self.terrain.get(&coords) {
-					self.memory.insert(coords, *tile);
-				}
+		let origin = self.objects_by_id[&player_id].coords;
+		self.vision = vision::get_vision(origin, |coords: TilePoint| {
+			!matches!(self.terrain.get(&coords), Some(Tile::Floor))
+		});
+		for coords in &self.vision {
+			if let Some(tile) = self.terrain.get(coords) {
+				self.memory.insert(*coords, *tile);
 			}
 		}
 	}
