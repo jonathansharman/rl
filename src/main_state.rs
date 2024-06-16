@@ -6,15 +6,36 @@ use ggez::{
 };
 
 use crate::{
-	coordinates::{TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
-	level::{Id, Level},
+	coordinates::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
+	level::{Collision, Id, Level},
 	meshes::Meshes,
 };
+
+enum Action {
+	Move { offset: TileVector },
+}
 
 pub struct MainState {
 	pub player_id: Id,
 	pub level: Level,
 	pub meshes: Meshes,
+}
+
+impl MainState {
+	fn act(&mut self, action: Action) {
+		match action {
+			Action::Move { offset } => {
+				match self.level.translate_object(self.player_id, offset) {
+					Ok(_) => self.level.update_vision(self.player_id),
+					Err(collision) => {
+						if let Collision::Object(collider_id) = collision {
+							// TODO: Handle collision.
+						}
+					}
+				};
+			}
+		}
+	}
 }
 
 impl event::EventHandler<ggez::GameError> for MainState {
@@ -31,27 +52,19 @@ impl event::EventHandler<ggez::GameError> for MainState {
 		let Some(keycode) = input.keycode else {
 			return Ok(());
 		};
-		match keycode {
+		let action = match keycode {
 			KeyCode::Escape => {
 				ctx.request_quit();
+				None
 			}
-			KeyCode::Up => {
-				self.level.translate_object(self.player_id, TILE_UP);
-				self.level.update_vision(self.player_id);
-			}
-			KeyCode::Down => {
-				self.level.translate_object(self.player_id, TILE_DOWN);
-				self.level.update_vision(self.player_id);
-			}
-			KeyCode::Left => {
-				self.level.translate_object(self.player_id, TILE_LEFT);
-				self.level.update_vision(self.player_id);
-			}
-			KeyCode::Right => {
-				self.level.translate_object(self.player_id, TILE_RIGHT);
-				self.level.update_vision(self.player_id);
-			}
-			_ => {}
+			KeyCode::Up => Some(Action::Move { offset: TILE_UP }),
+			KeyCode::Down => Some(Action::Move { offset: TILE_DOWN }),
+			KeyCode::Left => Some(Action::Move { offset: TILE_LEFT }),
+			KeyCode::Right => Some(Action::Move { offset: TILE_RIGHT }),
+			_ => None,
+		};
+		if let Some(action) = action {
+			self.act(action);
 		}
 		Ok(())
 	}

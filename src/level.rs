@@ -15,6 +15,7 @@ use crate::{
 		ScreenPoint, ScreenRectangle, ScreenVector, TilePoint, TileRectangle,
 		TileVector,
 	},
+	creature::{Creature, Species},
 	meshes::Meshes,
 	vision,
 };
@@ -60,7 +61,7 @@ enum Perception {
 	Remembered,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tile {
 	Floor,
 	Wall,
@@ -104,11 +105,11 @@ impl Tile {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Id(u32);
 
 enum Object {
-	Player,
+	Creature(Creature),
 }
 
 struct LevelObject {
@@ -125,21 +126,25 @@ impl LevelObject {
 		layout: &Layout,
 	) -> GameResult {
 		let tile_layout = layout.tile_layout(self.coords);
-		match self.object {
-			Object::Player => {
-				canvas.draw(
-					&meshes.player,
-					DrawParam::new()
-						.dest(tile_layout.pos + tile_layout.size / 2.0)
-						.scale(tile_layout.size),
-				);
-			}
-		}
+		let mesh = match &self.object {
+			Object::Creature(creature) => match creature.species {
+				Species::Human => &meshes.human,
+				Species::Goblin => &meshes.goblin,
+			},
+		};
+		canvas.draw(
+			mesh,
+			DrawParam::new()
+				.dest(tile_layout.pos + tile_layout.size / 2.0)
+				.scale(tile_layout.size),
+		);
 		Ok(())
 	}
 }
 
+#[derive(Debug)]
 pub enum Collision {
+	OutOfBounds,
 	Tile(Tile),
 	Object(Id),
 }
@@ -239,7 +244,7 @@ impl Level {
 				max_tile_y - min_tile_y + 1,
 			),
 		};
-		Level {
+		let mut level = Level {
 			layout: Layout::new(viewport, tileport),
 			terrain,
 			objects_by_id: HashMap::new(),
@@ -247,7 +252,22 @@ impl Level {
 			next_object_id: Id(0),
 			vision: HashSet::new(),
 			memory: HashMap::new(),
+		};
+
+		// Spawn some creatures.
+		for room in rooms {
+			level
+				.spawn(
+					Object::Creature(Creature {
+						species: Species::Goblin,
+						health: 3,
+					}),
+					room.center,
+				)
+				.unwrap();
 		}
+
+		level
 	}
 
 	/// Updates vision and memory according to the given player's field of view.
@@ -296,59 +316,81 @@ impl Level {
 		Ok(())
 	}
 
-	fn spawn(&mut self, object: Object, coords: TilePoint) -> Id {
+	fn spawn(
+		&mut self,
+		object: Object,
+		coords: TilePoint,
+	) -> Result<Id, Collision> {
+		if let Some(collision) = self.collide(coords) {
+			return Err(collision);
+		}
 		let id = self.next_object_id;
 		self.next_object_id.0 += 1;
+		self.object_ids_by_coords.insert(coords, id);
 		self.objects_by_id
 			.insert(id, LevelObject { id, object, coords });
-		self.object_ids_by_coords.insert(coords, id);
-		id
+		Ok(id)
 	}
 
-	pub fn spawn_player(&mut self) -> Id {
+	pub fn spawn_player(&mut self) -> Result<Id, Collision> {
 		let player_coords = self
 			.terrain
 			.iter()
 			.find_map(|(&coords, &tile)| {
-				(tile == Tile::Floor).then_some(coords)
+				(tile == Tile::Floor
+					&& !self.object_ids_by_coords.contains_key(&coords))
+				.then_some(coords)
 			})
 			.unwrap();
-		self.spawn(Object::Player, player_coords)
+		self.spawn(
+			Object::Creature(Creature {
+				species: Species::Human,
+				health: 10,
+			}),
+			player_coords,
+		)
 	}
 
-	// Translate's the position of the object identified by `id` by the given
-	// `offset` if the tile at those coordinates is unoccupied. If the tile is
-	// occupied, this returns a collision.
+	/// Translate's the position of the object identified by `id` by the given
+	/// `offset` if the tile at those coordinates is unoccupied. If the tile is
+	/// occupied, this returns a collision.
 	pub fn translate_object(
 		&mut self,
 		id: Id,
 		offset: TileVector,
-	) -> Option<Collision> {
+	) -> Result<(), Collision> {
 		let level_object = &self.objects_by_id[&id];
 		self.move_object_to(level_object.id, level_object.coords + offset)
 	}
 
-	// Moves the object identified by `id` to `coords` if there's an unoccupied,
-	// passable tile there. If the tile is occupied, this returns a collision.
-	pub fn move_object_to(
+	/// Moves the object identified by `id` to `coords` if there's an
+	/// unoccupied, passable tile there. If the tile is occupied, this returns a
+	/// collision.
+	fn move_object_to(
 		&mut self,
 		id: Id,
 		coords: TilePoint,
-	) -> Option<Collision> {
-		let tile = self.terrain.get(&coords)?;
+	) -> Result<(), Collision> {
+		if let Some(collision) = self.collide(coords) {
+			return Err(collision);
+		}
+		let level_object = self.objects_by_id.get_mut(&id).unwrap();
+		level_object.coords = coords;
+		self.object_ids_by_coords.insert(coords, level_object.id);
+		self.object_ids_by_coords.remove(&level_object.coords);
+		Ok(())
+	}
+
+	/// Gets the collision, if any, that would occur at `coords`.
+	fn collide(&self, coords: TilePoint) -> Option<Collision> {
+		let Some(tile) = self.terrain.get(&coords) else {
+			return Some(Collision::OutOfBounds);
+		};
 		if let Tile::Wall = tile {
 			return Some(Collision::Tile(*tile));
 		}
-
-		let level_object = self.objects_by_id.get_mut(&id).unwrap();
-		match self.object_ids_by_coords.entry(coords) {
-			Entry::Occupied(entry) => Some(Collision::Object(*entry.get())),
-			Entry::Vacant(entry) => {
-				entry.insert(level_object.id);
-				self.object_ids_by_coords.remove(&level_object.coords);
-				level_object.coords = coords;
-				None
-			}
-		}
+		self.object_ids_by_coords
+			.get(&coords)
+			.map(|id| Collision::Object(*id))
 	}
 }

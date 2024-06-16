@@ -1,4 +1,5 @@
 mod coordinates;
+mod creature;
 mod level;
 mod main_state;
 mod meshes;
@@ -7,7 +8,7 @@ mod vision;
 use coordinates::{ScreenPoint, ScreenRectangle, ScreenVector};
 use ggez::{
 	conf::{WindowMode, WindowSetup},
-	event, GameResult,
+	event, GameError, GameResult,
 };
 use level::Level;
 use main_state::MainState;
@@ -22,7 +23,9 @@ fn main() -> GameResult {
 	};
 	let mut rng: Pcg32 = Pcg32::from_entropy();
 	let mut level = Level::generate(viewport, &mut rng);
-	let player_id = level.spawn_player();
+	let player_id = level.spawn_player().map_err(|_| {
+		GameError::CustomError("player spawning was blocked".into())
+	})?;
 	level.update_vision(player_id);
 
 	let (mut ctx, event_loop) =

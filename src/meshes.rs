@@ -7,7 +7,8 @@ use ggez::{
 pub struct Meshes {
 	pub wall: Mesh,
 	pub floor: Mesh,
-	pub player: Mesh,
+	pub human: Mesh,
+	pub goblin: Mesh,
 }
 
 impl Meshes {
@@ -35,14 +36,23 @@ impl Meshes {
 				},
 				Color::from_rgb(128, 128, 128),
 			)?,
-			player: Mesh::new_ellipse(
+			human: Mesh::new_ellipse(
 				ctx,
 				DrawMode::fill(),
 				Vec2::new(0.0, 0.0),
 				0.5,
 				0.5,
 				1.0,
-				Color::YELLOW,
+				Color::BLUE,
+			)?,
+			goblin: Mesh::new_ellipse(
+				ctx,
+				DrawMode::fill(),
+				Vec2::new(0.0, 0.0),
+				0.5,
+				0.5,
+				1.0,
+				Color::RED,
 			)?,
 		})
 	}
