@@ -7,7 +7,7 @@ use ggez::{
 
 use crate::{
 	coordinates::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
-	level::{Collision, Id, Level},
+	level::{Collision, Level, ObjectRef},
 	meshes::Meshes,
 };
 
@@ -16,7 +16,7 @@ enum Action {
 }
 
 pub struct MainState {
-	pub player_id: Id,
+	pub player: ObjectRef,
 	pub level: Level,
 	pub meshes: Meshes,
 }
@@ -25,10 +25,12 @@ impl MainState {
 	fn act(&mut self, action: Action) {
 		match action {
 			Action::Move { offset } => {
-				match self.level.translate_object(self.player_id, offset) {
-					Ok(_) => self.level.update_vision(self.player_id),
+				let from = self.player.borrow().coords;
+				let to = from + offset;
+				match self.level.move_object(from, to) {
+					Ok(_) => self.level.update_vision(to),
 					Err(collision) => {
-						if let Collision::Object(collider_id) = collision {
+						if let Collision::Object(collider) = collision {
 							// TODO: Handle collision.
 						}
 					}

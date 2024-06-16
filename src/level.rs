@@ -1,6 +1,7 @@
 use std::{
-	collections::{hash_map::Entry, HashMap, HashSet},
-	hash::Hash,
+	cell::RefCell,
+	collections::{HashMap, HashSet},
+	rc::Rc,
 };
 
 use ggez::{
@@ -105,17 +106,18 @@ impl Tile {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Id(u32);
-
-enum Object {
+/// A movable object that can exist in a [`Level`].
+#[derive(Debug)]
+pub enum Object {
 	Creature(Creature),
 }
 
-struct LevelObject {
-	id: Id,
-	object: Object,
-	coords: TilePoint,
+/// An [`Object`] along with its coordinates in the particular [`Level`] where
+/// it exists.
+#[derive(Debug)]
+pub struct LevelObject {
+	pub object: Object,
+	pub coords: TilePoint,
 }
 
 impl LevelObject {
@@ -142,19 +144,21 @@ impl LevelObject {
 	}
 }
 
+/// A shared reference to a LevelObject with interior mutability. Anything that
+/// needs to own and mutate a LevelObject should do so through this type.
+pub type ObjectRef = Rc<RefCell<LevelObject>>;
+
 #[derive(Debug)]
 pub enum Collision {
 	OutOfBounds,
 	Tile(Tile),
-	Object(Id),
+	Object(ObjectRef),
 }
 
 pub struct Level {
 	layout: Layout,
 	terrain: HashMap<TilePoint, Tile>,
-	objects_by_id: HashMap<Id, LevelObject>,
-	object_ids_by_coords: HashMap<TilePoint, Id>,
-	next_object_id: Id,
+	objects: HashMap<TilePoint, ObjectRef>,
 	/// Points the player can currently see.
 	vision: HashSet<TilePoint>,
 	/// Tiles the player remembers seeing.
@@ -247,9 +251,7 @@ impl Level {
 		let mut level = Level {
 			layout: Layout::new(viewport, tileport),
 			terrain,
-			objects_by_id: HashMap::new(),
-			object_ids_by_coords: HashMap::new(),
-			next_object_id: Id(0),
+			objects: HashMap::new(),
 			vision: HashSet::new(),
 			memory: HashMap::new(),
 		};
@@ -270,9 +272,8 @@ impl Level {
 		level
 	}
 
-	/// Updates vision and memory according to the given player's field of view.
-	pub fn update_vision(&mut self, player_id: Id) {
-		let origin = self.objects_by_id[&player_id].coords;
+	/// Updates vision and memory using the given viewer `origin`.
+	pub fn update_vision(&mut self, origin: TilePoint) {
 		self.vision = vision::get_vision(origin, |coords: TilePoint| {
 			!matches!(self.terrain.get(&coords), Some(Tile::Floor))
 		});
@@ -308,7 +309,8 @@ impl Level {
 				)?;
 			}
 		}
-		for object in self.objects_by_id.values() {
+		for object in self.objects.values() {
+			let object = object.borrow();
 			if self.vision.contains(&object.coords) {
 				object.draw(canvas, meshes, &self.layout)?;
 			}
@@ -320,26 +322,25 @@ impl Level {
 		&mut self,
 		object: Object,
 		coords: TilePoint,
-	) -> Result<Id, Collision> {
+	) -> Result<ObjectRef, Collision> {
 		if let Some(collision) = self.collide(coords) {
 			return Err(collision);
 		}
-		let id = self.next_object_id;
-		self.next_object_id.0 += 1;
-		self.object_ids_by_coords.insert(coords, id);
-		self.objects_by_id
-			.insert(id, LevelObject { id, object, coords });
-		Ok(id)
+		let level_object =
+			Rc::new(RefCell::new(LevelObject { object, coords }));
+		self.objects.insert(coords, level_object.clone());
+		Ok(level_object)
 	}
 
-	pub fn spawn_player(&mut self) -> Result<Id, Collision> {
+	/// Spawns the player character at an arbitrary open tile. If a spot can't
+	/// be found, this panics.
+	pub fn spawn_player(&mut self) -> ObjectRef {
 		let player_coords = self
 			.terrain
 			.iter()
 			.find_map(|(&coords, &tile)| {
-				(tile == Tile::Floor
-					&& !self.object_ids_by_coords.contains_key(&coords))
-				.then_some(coords)
+				(tile == Tile::Floor && !self.objects.contains_key(&coords))
+					.then_some(coords)
 			})
 			.unwrap();
 		self.spawn(
@@ -349,35 +350,23 @@ impl Level {
 			}),
 			player_coords,
 		)
+		.unwrap()
 	}
 
-	/// Translate's the position of the object identified by `id` by the given
-	/// `offset` if the tile at those coordinates is unoccupied. If the tile is
-	/// occupied, this returns a collision.
-	pub fn translate_object(
+	/// Moves an from `from` to `to`, returning a collision if the target tile
+	/// is impassable or occupied. There must be an object at `from`, or this
+	/// panics.
+	pub fn move_object(
 		&mut self,
-		id: Id,
-		offset: TileVector,
+		from: TilePoint,
+		to: TilePoint,
 	) -> Result<(), Collision> {
-		let level_object = &self.objects_by_id[&id];
-		self.move_object_to(level_object.id, level_object.coords + offset)
-	}
-
-	/// Moves the object identified by `id` to `coords` if there's an
-	/// unoccupied, passable tile there. If the tile is occupied, this returns a
-	/// collision.
-	fn move_object_to(
-		&mut self,
-		id: Id,
-		coords: TilePoint,
-	) -> Result<(), Collision> {
-		if let Some(collision) = self.collide(coords) {
+		if let Some(collision) = self.collide(to) {
 			return Err(collision);
 		}
-		let level_object = self.objects_by_id.get_mut(&id).unwrap();
-		level_object.coords = coords;
-		self.object_ids_by_coords.insert(coords, level_object.id);
-		self.object_ids_by_coords.remove(&level_object.coords);
+		let object = self.objects.remove(&from).unwrap();
+		object.borrow_mut().coords = to;
+		self.objects.insert(to, object);
 		Ok(())
 	}
 
@@ -389,8 +378,8 @@ impl Level {
 		if let Tile::Wall = tile {
 			return Some(Collision::Tile(*tile));
 		}
-		self.object_ids_by_coords
+		self.objects
 			.get(&coords)
-			.map(|id| Collision::Object(*id))
+			.map(|level_object| Collision::Object(level_object.clone()))
 	}
 }

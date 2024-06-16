@@ -23,10 +23,8 @@ fn main() -> GameResult {
 	};
 	let mut rng: Pcg32 = Pcg32::from_entropy();
 	let mut level = Level::generate(viewport, &mut rng);
-	let player_id = level.spawn_player().map_err(|_| {
-		GameError::CustomError("player spawning was blocked".into())
-	})?;
-	level.update_vision(player_id);
+	let player = level.spawn_player();
+	level.update_vision(player.borrow().coords);
 
 	let (mut ctx, event_loop) =
 		ggez::ContextBuilder::new("RL", "Jonathan Sharman")
@@ -44,7 +42,7 @@ fn main() -> GameResult {
 			.build()?;
 	let meshes = Meshes::new(&mut ctx)?;
 	let state = MainState {
-		player_id,
+		player,
 		level,
 		meshes,
 	};

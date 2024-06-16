@@ -32,7 +32,7 @@ pub const TILE_DOWN: TileVector = TileVector::new(0, 1);
 pub const TILE_LEFT: TileVector = TileVector::new(-1, 0);
 pub const TILE_RIGHT: TileVector = TileVector::new(1, 0);
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Vector<T> {
 	pub x: T,
 	pub y: T,
@@ -125,7 +125,7 @@ impl<T> From<Vector<T>> for Vector2<T> {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Point<T> {
 	pub x: T,
 	pub y: T,
@@ -193,7 +193,7 @@ impl<T> From<Point<T>> for Point2<T> {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Rectangle<T> {
 	pub pos: Point<T>,
 	pub size: Vector<T>,
