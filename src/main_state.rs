@@ -28,6 +28,7 @@ impl MainState {
 				let from = self.player.borrow().coords;
 				let to = from + offset;
 				self.level.move_object(from, to);
+				self.level.update_vision(self.player.borrow().coords);
 			}
 		}
 	}
