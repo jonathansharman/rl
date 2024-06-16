@@ -7,8 +7,11 @@ use ggez::{
 pub struct Meshes {
 	pub wall: Mesh,
 	pub floor: Mesh,
+	// Objects
 	pub human: Mesh,
 	pub goblin: Mesh,
+	// Items
+	pub item: Mesh,
 }
 
 impl Meshes {
@@ -53,6 +56,17 @@ impl Meshes {
 				0.5,
 				1.0,
 				Color::RED,
+			)?,
+			item: Mesh::new_rectangle(
+				ctx,
+				DrawMode::fill(),
+				Rect {
+					x: -0.4,
+					y: -0.4,
+					w: 0.8,
+					h: 0.8,
+				},
+				Color::GREEN,
 			)?,
 		})
 	}

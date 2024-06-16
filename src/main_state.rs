@@ -7,7 +7,7 @@ use ggez::{
 
 use crate::{
 	coordinates::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
-	level::{Collision, Level, ObjectRef},
+	level::{Level, ObjectRef},
 	meshes::Meshes,
 };
 
@@ -27,14 +27,7 @@ impl MainState {
 			Action::Move { offset } => {
 				let from = self.player.borrow().coords;
 				let to = from + offset;
-				match self.level.move_object(from, to) {
-					Ok(_) => self.level.update_vision(to),
-					Err(collision) => {
-						if let Collision::Object(collider) = collision {
-							// TODO: Handle collision.
-						}
-					}
-				};
+				self.level.move_object(from, to);
 			}
 		}
 	}

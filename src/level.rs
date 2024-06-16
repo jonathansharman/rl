@@ -110,6 +110,7 @@ impl Tile {
 #[derive(Debug)]
 pub enum Object {
 	Creature(Creature),
+	Item, // TODO
 }
 
 /// An [`Object`] along with its coordinates in the particular [`Level`] where
@@ -133,6 +134,7 @@ impl LevelObject {
 				Species::Human => &meshes.human,
 				Species::Goblin => &meshes.goblin,
 			},
+			Object::Item => &meshes.item,
 		};
 		canvas.draw(
 			mesh,
@@ -259,13 +261,14 @@ impl Level {
 		// Spawn some creatures.
 		for room in rooms {
 			level
-				.spawn(
-					Object::Creature(Creature {
+				.spawn(LevelObject {
+					object: Object::Creature(Creature {
 						species: Species::Goblin,
 						health: 3,
+						strength: 1,
 					}),
-					room.center,
-				)
+					coords: room.center,
+				})
 				.unwrap();
 		}
 
@@ -320,16 +323,15 @@ impl Level {
 
 	fn spawn(
 		&mut self,
-		object: Object,
-		coords: TilePoint,
+		level_object: LevelObject,
 	) -> Result<ObjectRef, Collision> {
-		if let Some(collision) = self.collide(coords) {
+		let coords = level_object.coords;
+		if let Some(collision) = self.collision(coords) {
 			return Err(collision);
 		}
-		let level_object =
-			Rc::new(RefCell::new(LevelObject { object, coords }));
-		self.objects.insert(coords, level_object.clone());
-		Ok(level_object)
+		let object_ref = Rc::new(RefCell::new(level_object));
+		self.objects.insert(coords, object_ref.clone());
+		Ok(object_ref)
 	}
 
 	/// Spawns the player character at an arbitrary open tile. If a spot can't
@@ -343,35 +345,35 @@ impl Level {
 					.then_some(coords)
 			})
 			.unwrap();
-		self.spawn(
-			Object::Creature(Creature {
+		self.spawn(LevelObject {
+			object: Object::Creature(Creature {
 				species: Species::Human,
 				health: 10,
+				strength: 2,
 			}),
-			player_coords,
-		)
+			coords: player_coords,
+		})
 		.unwrap()
 	}
 
-	/// Moves an from `from` to `to`, returning a collision if the target tile
-	/// is impassable or occupied. There must be an object at `from`, or this
-	/// panics.
-	pub fn move_object(
-		&mut self,
-		from: TilePoint,
-		to: TilePoint,
-	) -> Result<(), Collision> {
-		if let Some(collision) = self.collide(to) {
-			return Err(collision);
+	/// Attempts to move an object from `from` to `to`, handling any resulting
+	/// collisions. There must be an object at `from`, or this panics.
+	pub fn move_object(&mut self, from: TilePoint, to: TilePoint) {
+		if let Some(collision) = self.collision(to) {
+			let Collision::Object(other) = collision else {
+				return;
+			};
+			let bumper = self.objects[&from].clone();
+			self.bump(&mut bumper.borrow_mut(), &mut other.borrow_mut());
+			return;
 		}
 		let object = self.objects.remove(&from).unwrap();
 		object.borrow_mut().coords = to;
 		self.objects.insert(to, object);
-		Ok(())
 	}
 
-	/// Gets the collision, if any, that would occur at `coords`.
-	fn collide(&self, coords: TilePoint) -> Option<Collision> {
+	/// The collision, if any, that would occur at `coords`.
+	fn collision(&self, coords: TilePoint) -> Option<Collision> {
 		let Some(tile) = self.terrain.get(&coords) else {
 			return Some(Collision::OutOfBounds);
 		};
@@ -381,5 +383,25 @@ impl Level {
 		self.objects
 			.get(&coords)
 			.map(|level_object| Collision::Object(level_object.clone()))
+	}
+
+	fn bump(&mut self, bumper: &mut LevelObject, other: &mut LevelObject) {
+		match &mut bumper.object {
+			Object::Creature(bumper_creature) => match &mut other.object {
+				Object::Creature(other_creature) => {
+					self.attack(bumper_creature, other_creature);
+				}
+				Object::Item => {}
+			},
+			Object::Item => {}
+		}
+	}
+
+	fn attack(&mut self, attacker: &mut Creature, defender: &mut Creature) {
+		defender.health -= attacker.strength;
+		println!(
+			"A {:?} hit a {:?} for {:?} damage!",
+			attacker.species, defender.species, attacker.strength
+		);
 	}
 }

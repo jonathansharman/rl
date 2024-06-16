@@ -8,4 +8,5 @@ pub enum Species {
 pub struct Creature {
 	pub species: Species,
 	pub health: i32,
+	pub strength: i32,
 }
