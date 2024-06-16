@@ -17,6 +17,7 @@ use crate::{
 		TileVector,
 	},
 	creature::{Creature, Species},
+	item::Item,
 	meshes::Meshes,
 	vision,
 };
@@ -110,7 +111,7 @@ impl Tile {
 #[derive(Debug)]
 pub enum Object {
 	Creature(Creature),
-	Item, // TODO
+	Item(Item),
 }
 
 /// An [`Object`] along with its coordinates in the particular [`Level`] where
@@ -134,7 +135,7 @@ impl LevelObject {
 				Species::Human => &meshes.human,
 				Species::Goblin => &meshes.goblin,
 			},
-			Object::Item => &meshes.item,
+			Object::Item(_item) => &meshes.item,
 		};
 		canvas.draw(
 			mesh,
@@ -389,19 +390,31 @@ impl Level {
 		match &mut bumper.object {
 			Object::Creature(bumper_creature) => match &mut other.object {
 				Object::Creature(other_creature) => {
-					self.attack(bumper_creature, other_creature);
+					self.attack(bumper_creature, other_creature, other.coords);
 				}
-				Object::Item => {}
+				Object::Item(_item) => {}
 			},
-			Object::Item => {}
+			Object::Item(_item) => {}
 		}
 	}
 
-	fn attack(&mut self, attacker: &mut Creature, defender: &mut Creature) {
+	fn attack(
+		&mut self,
+		attacker: &mut Creature,
+		defender: &mut Creature,
+		// TODO: Passing these coordinates separately feels like a smell. How
+		// can I bundle up a specific type of Object and its coordinates in a
+		// sensible way?
+		defender_coords: TilePoint,
+	) {
 		defender.health -= attacker.strength;
 		println!(
 			"A {:?} hit a {:?} for {:?} damage!",
 			attacker.species, defender.species, attacker.strength
 		);
+		if defender.health <= 0 {
+			println!("The {:?} died!", defender.species);
+			self.objects.remove(&defender_coords);
+		}
 	}
 }

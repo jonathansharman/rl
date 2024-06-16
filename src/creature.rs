@@ -1,9 +1,11 @@
+/// A type of [`Creature`].
 #[derive(Debug)]
 pub enum Species {
 	Human,
 	Goblin,
 }
 
+/// An animate being.
 #[derive(Debug)]
 pub struct Creature {
 	pub species: Species,

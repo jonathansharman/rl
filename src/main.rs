@@ -1,5 +1,6 @@
 mod coordinates;
 mod creature;
+mod item;
 mod level;
 mod main_state;
 mod meshes;
@@ -8,7 +9,7 @@ mod vision;
 use coordinates::{ScreenPoint, ScreenRectangle, ScreenVector};
 use ggez::{
 	conf::{WindowMode, WindowSetup},
-	event, GameError, GameResult,
+	event, GameResult,
 };
 use level::Level;
 use main_state::MainState;
