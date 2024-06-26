@@ -7,8 +7,10 @@ use ggez::{
 
 use crate::{
 	coordinates::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
-	level::{Level, ObjectRef},
+	creature::Creature,
+	level::Level,
 	meshes::Meshes,
+	shared::Shared,
 };
 
 enum Action {
@@ -16,7 +18,7 @@ enum Action {
 }
 
 pub struct MainState {
-	pub player: ObjectRef,
+	pub player: Shared<Creature>,
 	pub level: Level,
 	pub meshes: Meshes,
 }
@@ -25,10 +27,9 @@ impl MainState {
 	fn act(&mut self, action: Action) {
 		match action {
 			Action::Move { offset } => {
-				let from = self.player.borrow().coords;
-				let to = from + offset;
-				self.level.move_object(from, to);
-				self.level.update_vision(self.player.borrow().coords);
+				let player = &mut self.player.borrow_mut();
+				self.level.translate_creature(player, offset);
+				self.level.update_vision(player.coords);
 			}
 		}
 	}
@@ -67,7 +68,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
 
 	fn draw(&mut self, ctx: &mut Context) -> GameResult {
 		let mut canvas = Canvas::from_frame(ctx, Color::BLACK);
-		self.level.draw(&mut canvas, &self.meshes)?;
+		self.level.draw(&mut canvas, &self.meshes);
 		canvas.finish(ctx)
 	}
 }

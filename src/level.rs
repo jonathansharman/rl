@@ -1,13 +1,6 @@
-use std::{
-	cell::RefCell,
-	collections::{HashMap, HashSet},
-	rc::Rc,
-};
+use std::collections::{HashMap, HashSet};
 
-use ggez::{
-	graphics::{Canvas, Color, DrawParam},
-	GameResult,
-};
+use ggez::graphics::{Canvas, Color, DrawParam};
 use rand::Rng;
 use rand_pcg::Pcg32;
 
@@ -19,10 +12,11 @@ use crate::{
 	creature::{Creature, Species},
 	item::Item,
 	meshes::Meshes,
+	shared::{share, Shared},
 	vision,
 };
 
-struct Layout {
+pub struct Layout {
 	// The region of the screen to map this layout to.
 	viewport: ScreenRectangle,
 	// Tile rectangle containing all the tiles that may need to be displayed.
@@ -44,7 +38,7 @@ impl Layout {
 		}
 	}
 
-	fn tile_layout(&self, coords: TilePoint) -> ScreenRectangle {
+	pub fn tile_layout(&self, coords: TilePoint) -> ScreenRectangle {
 		let pos = ScreenPoint::new(
 			self.viewport.pos.x
 				+ self.tile_size.x * (coords.x - self.tileport.pos.x) as f32,
@@ -77,7 +71,7 @@ impl Tile {
 		layout: &Layout,
 		coords: TilePoint,
 		perception: Perception,
-	) -> GameResult {
+	) {
 		let color = match perception {
 			Perception::Seen => Color::WHITE,
 			Perception::Remembered => Color::from_rgba(255, 255, 255, 64),
@@ -103,65 +97,21 @@ impl Tile {
 				);
 			}
 		}
-		Ok(())
 	}
 }
-
-/// A movable object that can exist in a [`Level`].
-#[derive(Debug)]
-pub enum Object {
-	Creature(Creature),
-	Item(Item),
-}
-
-/// An [`Object`] along with its coordinates in the particular [`Level`] where
-/// it exists.
-#[derive(Debug)]
-pub struct LevelObject {
-	pub object: Object,
-	pub coords: TilePoint,
-}
-
-impl LevelObject {
-	fn draw(
-		&self,
-		canvas: &mut Canvas,
-		meshes: &Meshes,
-		layout: &Layout,
-	) -> GameResult {
-		let tile_layout = layout.tile_layout(self.coords);
-		let mesh = match &self.object {
-			Object::Creature(creature) => match creature.species {
-				Species::Human => &meshes.human,
-				Species::Goblin => &meshes.goblin,
-			},
-			Object::Item(_item) => &meshes.item,
-		};
-		canvas.draw(
-			mesh,
-			DrawParam::new()
-				.dest(tile_layout.pos + tile_layout.size / 2.0)
-				.scale(tile_layout.size),
-		);
-		Ok(())
-	}
-}
-
-/// A shared reference to a LevelObject with interior mutability. Anything that
-/// needs to own and mutate a LevelObject should do so through this type.
-pub type ObjectRef = Rc<RefCell<LevelObject>>;
 
 #[derive(Debug)]
 pub enum Collision {
 	OutOfBounds,
 	Tile(Tile),
-	Object(ObjectRef),
+	Object(Shared<Creature>),
 }
 
 pub struct Level {
 	layout: Layout,
 	terrain: HashMap<TilePoint, Tile>,
-	objects: HashMap<TilePoint, ObjectRef>,
+	creatures: HashMap<TilePoint, Shared<Creature>>,
+	items: HashMap<TilePoint, Shared<Item>>,
 	/// Points the player can currently see.
 	vision: HashSet<TilePoint>,
 	/// Tiles the player remembers seeing.
@@ -254,7 +204,8 @@ impl Level {
 		let mut level = Level {
 			layout: Layout::new(viewport, tileport),
 			terrain,
-			objects: HashMap::new(),
+			creatures: HashMap::new(),
+			items: HashMap::new(),
 			vision: HashSet::new(),
 			memory: HashMap::new(),
 		};
@@ -262,14 +213,12 @@ impl Level {
 		// Spawn some creatures.
 		for room in rooms {
 			level
-				.spawn(LevelObject {
-					object: Object::Creature(Creature {
-						species: Species::Goblin,
-						health: 3,
-						strength: 1,
-					}),
+				.spawn(share(Creature {
+					species: Species::Goblin,
 					coords: room.center,
-				})
+					health: 3,
+					strength: 1,
+				}))
 				.unwrap();
 		}
 
@@ -288,7 +237,8 @@ impl Level {
 		}
 	}
 
-	pub fn draw(&self, canvas: &mut Canvas, meshes: &Meshes) -> GameResult {
+	/// Draw everything in the level.
+	pub fn draw(&self, canvas: &mut Canvas, meshes: &Meshes) {
 		// Draw all remembered tiles that are not currently visible.
 		for (coords, tile) in &self.memory {
 			if !self.vision.contains(coords) {
@@ -298,7 +248,7 @@ impl Level {
 					&self.layout,
 					*coords,
 					Perception::Remembered,
-				)?;
+				);
 			}
 		}
 		// Draw visible tiles and objects.
@@ -310,67 +260,75 @@ impl Level {
 					&self.layout,
 					*coords,
 					Perception::Seen,
-				)?;
+				);
 			}
 		}
-		for object in self.objects.values() {
-			let object = object.borrow();
-			if self.vision.contains(&object.coords) {
-				object.draw(canvas, meshes, &self.layout)?;
+		for creature in self.creatures.values() {
+			let creature = creature.borrow();
+			if self.vision.contains(&creature.coords) {
+				creature.draw(canvas, meshes, &self.layout);
 			}
 		}
-		Ok(())
 	}
 
 	fn spawn(
 		&mut self,
-		level_object: LevelObject,
-	) -> Result<ObjectRef, Collision> {
-		let coords = level_object.coords;
+		creature: Shared<Creature>,
+	) -> Result<Shared<Creature>, Collision> {
+		let coords = creature.borrow().coords;
 		if let Some(collision) = self.collision(coords) {
 			return Err(collision);
 		}
-		let object_ref = Rc::new(RefCell::new(level_object));
-		self.objects.insert(coords, object_ref.clone());
-		Ok(object_ref)
+		self.creatures.insert(coords, creature.clone());
+		Ok(creature)
 	}
 
 	/// Spawns the player character at an arbitrary open tile. If a spot can't
 	/// be found, this panics.
-	pub fn spawn_player(&mut self) -> ObjectRef {
+	pub fn spawn_player(&mut self) -> Shared<Creature> {
 		let player_coords = self
 			.terrain
 			.iter()
 			.find_map(|(&coords, &tile)| {
-				(tile == Tile::Floor && !self.objects.contains_key(&coords))
+				(tile == Tile::Floor && !self.creatures.contains_key(&coords))
 					.then_some(coords)
 			})
 			.unwrap();
-		self.spawn(LevelObject {
-			object: Object::Creature(Creature {
-				species: Species::Human,
-				health: 10,
-				strength: 2,
-			}),
+		self.spawn(share(Creature {
+			species: Species::Human,
 			coords: player_coords,
-		})
+			health: 10,
+			strength: 2,
+		}))
 		.unwrap()
 	}
 
-	/// Attempts to move an object from `from` to `to`, handling any resulting
-	/// collisions. There must be an object at `from`, or this panics.
-	pub fn move_object(&mut self, from: TilePoint, to: TilePoint) {
+	/// Attempts to translate `creature`'s position by `offset`, handling any
+	/// resulting collisions. The creature must exist in the level, or this
+	/// panics.
+	pub fn translate_creature(
+		&mut self,
+		creature: &mut Creature,
+		offset: TileVector,
+	) {
+		self.move_creature(creature, creature.coords + offset)
+	}
+
+	/// Attempts to move `creature` to `to`, handling any resulting collisions.
+	/// The creature must exist in the level, or this panics.
+	pub fn move_creature(&mut self, creature: &mut Creature, to: TilePoint) {
+		let from = creature.coords;
 		if let Some(collision) = self.collision(to) {
 			let Collision::Object(other) = collision else {
 				return;
 			};
-			let bumper = self.objects[&from].clone();
-			self.bump(&mut bumper.borrow_mut(), &mut other.borrow_mut());
+			self.attack(creature, &mut other.borrow_mut());
 			return;
 		}
-		let object = self.objects.remove(&from).unwrap();
-		object.borrow_mut().coords = to;
-		self.objects.insert(to, object);
+		// The removed creature should be a reference to the creature parameter.
+		let removed = self.creatures.remove(&from).unwrap();
+		creature.coords = to;
+		self.creatures.insert(to, removed);
 	}
 
 	/// The collision, if any, that would occur at `coords`.
@@ -381,32 +339,12 @@ impl Level {
 		if let Tile::Wall = tile {
 			return Some(Collision::Tile(*tile));
 		}
-		self.objects
+		self.creatures
 			.get(&coords)
 			.map(|level_object| Collision::Object(level_object.clone()))
 	}
 
-	fn bump(&mut self, bumper: &mut LevelObject, other: &mut LevelObject) {
-		match &mut bumper.object {
-			Object::Creature(bumper_creature) => match &mut other.object {
-				Object::Creature(other_creature) => {
-					self.attack(bumper_creature, other_creature, other.coords);
-				}
-				Object::Item(_item) => {}
-			},
-			Object::Item(_item) => {}
-		}
-	}
-
-	fn attack(
-		&mut self,
-		attacker: &mut Creature,
-		defender: &mut Creature,
-		// TODO: Passing these coordinates separately feels like a smell. How
-		// can I bundle up a specific type of Object and its coordinates in a
-		// sensible way?
-		defender_coords: TilePoint,
-	) {
+	fn attack(&mut self, attacker: &mut Creature, defender: &mut Creature) {
 		defender.health -= attacker.strength;
 		println!(
 			"A {:?} hit a {:?} for {:?} damage!",
@@ -414,7 +352,7 @@ impl Level {
 		);
 		if defender.health <= 0 {
 			println!("The {:?} died!", defender.species);
-			self.objects.remove(&defender_coords);
+			self.creatures.remove(&defender.coords);
 		}
 	}
 }

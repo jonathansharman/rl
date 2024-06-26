@@ -4,6 +4,7 @@ mod item;
 mod level;
 mod main_state;
 mod meshes;
+mod shared;
 mod vision;
 
 use coordinates::{ScreenPoint, ScreenRectangle, ScreenVector};
