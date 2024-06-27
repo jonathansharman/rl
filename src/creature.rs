@@ -9,10 +9,17 @@ pub enum Species {
 	Goblin,
 }
 
+#[derive(Debug)]
+pub enum Behavior {
+	PlayerControlled,
+	AIControlled,
+}
+
 /// An animate being.
 #[derive(Debug)]
 pub struct Creature {
 	pub species: Species,
+	pub behavior: Behavior,
 	pub coords: TilePoint,
 	pub health: i32,
 	pub strength: i32,
@@ -31,5 +38,9 @@ impl Creature {
 				.dest(tile_layout.pos + tile_layout.size / 2.0)
 				.scale(tile_layout.size),
 		);
+	}
+
+	pub fn dead(&self) -> bool {
+		self.health <= 0
 	}
 }

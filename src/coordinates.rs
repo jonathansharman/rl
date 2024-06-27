@@ -6,6 +6,8 @@ use ggez::{
 	glam::Vec2,
 	mint::{Point2, Vector2},
 };
+use rand::Rng;
+use rand_pcg::Pcg32;
 
 pub type ScreenVector = Vector<f32>;
 pub type ScreenPoint = Point<f32>;
@@ -31,6 +33,16 @@ pub const TILE_UP: TileVector = TileVector::new(0, -1);
 pub const TILE_DOWN: TileVector = TileVector::new(0, 1);
 pub const TILE_LEFT: TileVector = TileVector::new(-1, 0);
 pub const TILE_RIGHT: TileVector = TileVector::new(1, 0);
+
+/// Offset to a random adjacent tile.
+pub fn random_neighbor(rng: &mut Pcg32) -> TileVector {
+	match rng.gen_range(0..4) {
+		0 => TILE_UP,
+		1 => TILE_DOWN,
+		2 => TILE_LEFT,
+		_ => TILE_RIGHT,
+	}
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Vector<T> {

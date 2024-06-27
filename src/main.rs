@@ -1,19 +1,19 @@
 mod coordinates;
 mod creature;
+mod game_state;
 mod item;
 mod level;
-mod main_state;
 mod meshes;
 mod shared;
 mod vision;
 
 use coordinates::{ScreenPoint, ScreenRectangle, ScreenVector};
+use game_state::GameState;
 use ggez::{
 	conf::{WindowMode, WindowSetup},
 	event, GameResult,
 };
 use level::Level;
-use main_state::MainState;
 use meshes::Meshes;
 use rand::prelude::*;
 use rand_pcg::Pcg32;
@@ -43,7 +43,8 @@ fn main() -> GameResult {
 			})
 			.build()?;
 	let meshes = Meshes::new(&mut ctx)?;
-	let state = MainState {
+	let state = GameState {
+		rng,
 		player,
 		level,
 		meshes,

@@ -4,6 +4,7 @@ use ggez::{
 	input::keyboard::{KeyCode, KeyInput},
 	Context, GameResult,
 };
+use rand_pcg::Pcg32;
 
 use crate::{
 	coordinates::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
@@ -17,25 +18,27 @@ enum Action {
 	Move { offset: TileVector },
 }
 
-pub struct MainState {
+pub struct GameState {
+	pub rng: Pcg32,
 	pub player: Shared<Creature>,
 	pub level: Level,
 	pub meshes: Meshes,
 }
 
-impl MainState {
+impl GameState {
 	fn act(&mut self, action: Action) {
 		match action {
 			Action::Move { offset } => {
-				let player = &mut self.player.borrow_mut();
-				self.level.translate_creature(player, offset);
-				self.level.update_vision(player.coords);
+				self.level
+					.translate_creature(&mut self.player.borrow_mut(), offset);
+				self.level.update(&mut self.rng);
+				self.level.update_vision(self.player.borrow().coords);
 			}
 		}
 	}
 }
 
-impl event::EventHandler<ggez::GameError> for MainState {
+impl event::EventHandler<ggez::GameError> for GameState {
 	fn update(&mut self, _ctx: &mut Context) -> GameResult {
 		Ok(())
 	}
@@ -46,6 +49,11 @@ impl event::EventHandler<ggez::GameError> for MainState {
 		input: KeyInput,
 		_repeat: bool,
 	) -> GameResult {
+		// Disable input when dead.
+		if self.player.borrow().dead() {
+			return Ok(());
+		}
+
 		let Some(keycode) = input.keycode else {
 			return Ok(());
 		};

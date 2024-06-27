@@ -6,10 +6,10 @@ use rand_pcg::Pcg32;
 
 use crate::{
 	coordinates::{
-		ScreenPoint, ScreenRectangle, ScreenVector, TilePoint, TileRectangle,
-		TileVector,
+		random_neighbor, ScreenPoint, ScreenRectangle, ScreenVector, TilePoint,
+		TileRectangle, TileVector,
 	},
-	creature::{Creature, Species},
+	creature::{Behavior, Creature, Species},
 	item::Item,
 	meshes::Meshes,
 	shared::{share, Shared},
@@ -215,6 +215,7 @@ impl Level {
 			level
 				.spawn(share(Creature {
 					species: Species::Goblin,
+					behavior: Behavior::AIControlled,
 					coords: room.center,
 					health: 3,
 					strength: 1,
@@ -271,6 +272,27 @@ impl Level {
 		}
 	}
 
+	/// Advance time in the level by one turn, allowing NPCs to take their
+	/// turns.
+	pub fn update(&mut self, rng: &mut Pcg32) {
+		let mut queue = self.creatures.values().cloned().collect::<Vec<_>>();
+		while let Some(creature) = queue.pop() {
+			// The player's creature is controlled separately.
+			if let Behavior::PlayerControlled = creature.borrow().behavior {
+				continue;
+			}
+			// The creature may have died during iteration.
+			if creature.borrow().dead() {
+				continue;
+			}
+			// Move in a random direction.
+			self.translate_creature(
+				&mut creature.borrow_mut(),
+				random_neighbor(rng),
+			);
+		}
+	}
+
 	fn spawn(
 		&mut self,
 		creature: Shared<Creature>,
@@ -296,6 +318,7 @@ impl Level {
 			.unwrap();
 		self.spawn(share(Creature {
 			species: Species::Human,
+			behavior: Behavior::PlayerControlled,
 			coords: player_coords,
 			health: 10,
 			strength: 2,
@@ -350,7 +373,7 @@ impl Level {
 			"A {:?} hit a {:?} for {:?} damage!",
 			attacker.species, defender.species, attacker.strength
 		);
-		if defender.health <= 0 {
+		if defender.dead() {
 			println!("The {:?} died!", defender.species);
 			self.creatures.remove(&defender.coords);
 		}
