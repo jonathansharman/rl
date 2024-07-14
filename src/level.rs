@@ -16,7 +16,10 @@ use crate::{
 	vision,
 };
 
-pub struct Layout {
+/// Maps a region in tile space (the tileport) to a region in screen space (the
+/// viewport), filling the viewport while maintaining the tileport's original
+/// aspect ratio, i.e. ensuring tiles appear square.
+pub struct TileLayout {
 	// The region of the screen to map this layout to.
 	viewport: ScreenRectangle,
 	// Tile rectangle containing all the tiles that may need to be displayed.
@@ -25,20 +28,45 @@ pub struct Layout {
 	tile_size: ScreenVector,
 }
 
-impl Layout {
-	fn new(viewport: ScreenRectangle, tileport: TileRectangle) -> Layout {
+impl TileLayout {
+	fn new(viewport: ScreenRectangle, tileport: TileRectangle) -> TileLayout {
+		// Shrink the viewport as needed so that its aspect ratio matches the
+		// tileport's.
+		let tileport_ar = tileport.size.x as f32 / tileport.size.y as f32;
+		let viewport_ar = viewport.size.x / viewport.size.y;
+		let viewport = if viewport_ar <= tileport_ar {
+			// The viewport is possibly too tall.
+			let new_height = viewport.size.x / tileport_ar;
+			ScreenRectangle {
+				pos: ScreenPoint::new(
+					viewport.pos.x,
+					viewport.pos.y + 0.5 * (viewport.size.y - new_height),
+				),
+				size: ScreenVector::new(viewport.size.x, new_height),
+			}
+		} else {
+			// The viewport is too wide.
+			let new_width = viewport.size.y * tileport_ar;
+			ScreenRectangle {
+				pos: ScreenPoint::new(
+					viewport.pos.x + 0.5 * (viewport.size.x - new_width),
+					viewport.pos.y,
+				), // TODO: Center
+				size: ScreenVector::new(new_width, viewport.size.y),
+			}
+		};
 		let tile_size = ScreenVector::new(
 			viewport.size.x / tileport.size.x as f32,
 			viewport.size.y / tileport.size.y as f32,
 		);
-		Layout {
+		TileLayout {
 			viewport,
 			tileport,
 			tile_size,
 		}
 	}
 
-	pub fn tile_layout(&self, coords: TilePoint) -> ScreenRectangle {
+	pub fn to_screen(&self, coords: TilePoint) -> ScreenRectangle {
 		let pos = ScreenPoint::new(
 			self.viewport.pos.x
 				+ self.tile_size.x * (coords.x - self.tileport.pos.x) as f32,
@@ -68,7 +96,7 @@ impl Tile {
 		&self,
 		canvas: &mut Canvas,
 		meshes: &Meshes,
-		layout: &Layout,
+		tile_layout: &TileLayout,
 		coords: TilePoint,
 		perception: Perception,
 	) {
@@ -76,14 +104,14 @@ impl Tile {
 			Perception::Seen => Color::WHITE,
 			Perception::Remembered => Color::from_rgba(255, 255, 255, 64),
 		};
-		let tile_layout = layout.tile_layout(coords);
+		let screen_tile = tile_layout.to_screen(coords);
 		match self {
 			Tile::Floor => {
 				canvas.draw(
 					&meshes.floor,
 					DrawParam::new()
-						.dest(tile_layout.pos)
-						.scale(tile_layout.size)
+						.dest(screen_tile.pos)
+						.scale(screen_tile.size)
 						.color(color),
 				);
 			}
@@ -91,8 +119,8 @@ impl Tile {
 				canvas.draw(
 					&meshes.wall,
 					DrawParam::new()
-						.dest(tile_layout.pos)
-						.scale(tile_layout.size)
+						.dest(screen_tile.pos)
+						.scale(screen_tile.size)
 						.color(color),
 				);
 			}
@@ -108,7 +136,7 @@ pub enum Collision {
 }
 
 pub struct Level {
-	layout: Layout,
+	tile_layout: TileLayout,
 	terrain: HashMap<TilePoint, Tile>,
 	creatures: HashMap<TilePoint, Shared<Creature>>,
 	items: HashMap<TilePoint, Shared<Item>>,
@@ -202,7 +230,7 @@ impl Level {
 			),
 		};
 		let mut level = Level {
-			layout: Layout::new(viewport, tileport),
+			tile_layout: TileLayout::new(viewport, tileport),
 			terrain,
 			creatures: HashMap::new(),
 			items: HashMap::new(),
@@ -246,7 +274,7 @@ impl Level {
 				tile.draw(
 					canvas,
 					meshes,
-					&self.layout,
+					&self.tile_layout,
 					*coords,
 					Perception::Remembered,
 				);
@@ -258,7 +286,7 @@ impl Level {
 				tile.draw(
 					canvas,
 					meshes,
-					&self.layout,
+					&self.tile_layout,
 					*coords,
 					Perception::Seen,
 				);
@@ -267,7 +295,7 @@ impl Level {
 		for creature in self.creatures.values() {
 			let creature = creature.borrow();
 			if self.vision.contains(&creature.coords) {
-				creature.draw(canvas, meshes, &self.layout);
+				creature.draw(canvas, meshes, &self.tile_layout);
 			}
 		}
 	}

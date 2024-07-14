@@ -21,7 +21,7 @@ use rand_pcg::Pcg32;
 fn main() -> GameResult {
 	let viewport = ScreenRectangle {
 		pos: ScreenPoint::new(0.0, 0.0),
-		size: ScreenVector::new(1280.0, 720.0),
+		size: ScreenVector::new(1920.0, 1080.0),
 	};
 	let mut rng: Pcg32 = Pcg32::from_entropy();
 	let mut level = Level::generate(viewport, &mut rng);
@@ -38,6 +38,8 @@ fn main() -> GameResult {
 			.window_mode(WindowMode {
 				width: viewport.size.x,
 				height: viewport.size.y,
+				maximized: true,
+				fullscreen_type: ggez::conf::FullscreenType::Desktop,
 				resizable: true,
 				..Default::default()
 			})

@@ -1,6 +1,6 @@
 use ggez::graphics::{Canvas, DrawParam};
 
-use crate::{coordinates::TilePoint, level::Layout, meshes::Meshes};
+use crate::{coordinates::TilePoint, level::TileLayout, meshes::Meshes};
 
 /// A type of [`Creature`].
 #[derive(Debug)]
@@ -26,8 +26,13 @@ pub struct Creature {
 }
 
 impl Creature {
-	pub fn draw(&self, canvas: &mut Canvas, meshes: &Meshes, layout: &Layout) {
-		let tile_layout = layout.tile_layout(self.coords);
+	pub fn draw(
+		&self,
+		canvas: &mut Canvas,
+		meshes: &Meshes,
+		layout: &TileLayout,
+	) {
+		let tile_layout = layout.to_screen(self.coords);
 		let mesh = match self.species {
 			Species::Human => &meshes.human,
 			Species::Goblin => &meshes.goblin,
