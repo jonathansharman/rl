@@ -7,7 +7,10 @@ mod meshes;
 mod shared;
 mod vision;
 
-use coordinates::{ScreenPoint, ScreenRectangle, ScreenVector};
+use coordinates::{
+	ScreenPoint, ScreenRectangle, ScreenVector, TilePoint, TileRectangle,
+	TileVector,
+};
 use game_state::GameState;
 use ggez::{
 	conf::{WindowMode, WindowSetup},
@@ -24,7 +27,20 @@ fn main() -> GameResult {
 		size: ScreenVector::new(1920.0, 1080.0),
 	};
 	let mut rng: Pcg32 = Pcg32::from_entropy();
-	let mut level = Level::generate(viewport, &mut rng);
+	let mut level = Level::generate(
+		level::GenerationConfig {
+			viewport,
+			// 30-px tiles fitting snugly in a 1920 x 1080 viewport
+			tileport: TileRectangle {
+				pos: TilePoint::new(0, 0),
+				size: TileVector::new(64, 36),
+			},
+			min_floor_ratio: 0.4,
+			min_room_size: 3,
+			max_room_size: 15,
+		},
+		&mut rng,
+	);
 	let player = level.spawn_player();
 	level.update_vision(player.borrow().coords);
 

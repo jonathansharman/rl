@@ -6,7 +6,7 @@ use ggez::{
 	glam::Vec2,
 	mint::{Point2, Vector2},
 };
-use rand::Rng;
+use rand::seq::SliceRandom;
 use rand_pcg::Pcg32;
 
 pub type ScreenVector = Vector<f32>;
@@ -33,15 +33,32 @@ pub const TILE_UP: TileVector = TileVector::new(0, -1);
 pub const TILE_DOWN: TileVector = TileVector::new(0, 1);
 pub const TILE_LEFT: TileVector = TileVector::new(-1, 0);
 pub const TILE_RIGHT: TileVector = TileVector::new(1, 0);
+pub const TILE_UP_LEFT: TileVector = TileVector::new(-1, -1);
+pub const TILE_UP_RIGHT: TileVector = TileVector::new(1, -1);
+pub const TILE_DOWN_LEFT: TileVector = TileVector::new(-1, 1);
+pub const TILE_DOWN_RIGHT: TileVector = TileVector::new(1, 1);
 
-/// Offset to a random adjacent tile.
-pub fn random_neighbor(rng: &mut Pcg32) -> TileVector {
-	match rng.gen_range(0..4) {
-		0 => TILE_UP,
-		1 => TILE_DOWN,
-		2 => TILE_LEFT,
-		_ => TILE_RIGHT,
-	}
+/// Offset to a random adjacent tile, excluding diagonals.
+pub fn random_neighbor_four(rng: &mut Pcg32) -> TileVector {
+	*[TILE_UP, TILE_DOWN, TILE_LEFT, TILE_RIGHT]
+		.choose(rng)
+		.unwrap()
+}
+
+/// Offset to a random adjacent tile, including diagonals.
+pub fn random_neighbor_eight(rng: &mut Pcg32) -> TileVector {
+	*[
+		TILE_UP,
+		TILE_DOWN,
+		TILE_LEFT,
+		TILE_RIGHT,
+		TILE_UP_LEFT,
+		TILE_UP_RIGHT,
+		TILE_DOWN_LEFT,
+		TILE_DOWN_RIGHT,
+	]
+	.choose(rng)
+	.unwrap()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -209,4 +226,45 @@ impl<T> From<Point<T>> for Point2<T> {
 pub struct Rectangle<T> {
 	pub pos: Point<T>,
 	pub size: Vector<T>,
+}
+
+impl<T> Rectangle<T> {
+	/// The nonempty overlapping region of `self` and `other`, if any.
+	pub fn intersection(self, other: Self) -> Option<Self>
+	where
+		T: Copy + Ord + Add<Output = T> + Sub<Output = T>,
+	{
+		let start_x = self.pos.x.max(other.pos.x);
+		let start_y = self.pos.y.max(other.pos.y);
+		let end_x = (self.pos.x + self.size.x).min(other.pos.x + other.size.x);
+		let end_y = (self.pos.y + self.size.y).min(other.pos.y + other.size.y);
+		if start_x >= end_x || start_y >= end_y {
+			None
+		} else {
+			Some(Self {
+				pos: Point::new(start_x, start_y),
+				size: Vector::new(end_x - start_x, end_y - start_y),
+			})
+		}
+	}
+
+	/// Whether `self` and `other` are overlapping or adjacent.
+	pub fn touching(self, other: Self) -> bool
+	where
+		T: Copy + Ord + Add<Output = T> + Sub<Output = T>,
+	{
+		let start_x = self.pos.x.max(other.pos.x);
+		let start_y = self.pos.y.max(other.pos.y);
+		let end_x = (self.pos.x + self.size.x).min(other.pos.x + other.size.x);
+		let end_y = (self.pos.y + self.size.y).min(other.pos.y + other.size.y);
+		start_x <= end_x && start_y <= end_y
+	}
+
+	/// The rectangle's width times height.
+	pub fn area(self) -> T
+	where
+		T: Mul<Output = T>,
+	{
+		self.size.x * self.size.y
+	}
 }

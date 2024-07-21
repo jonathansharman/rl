@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+	cmp::Ordering,
+	collections::{BTreeSet, HashMap, HashSet},
+};
 
 use ggez::graphics::{Canvas, Color, DrawParam};
 use rand::Rng;
@@ -6,8 +9,8 @@ use rand_pcg::Pcg32;
 
 use crate::{
 	coordinates::{
-		random_neighbor, ScreenPoint, ScreenRectangle, ScreenVector, TilePoint,
-		TileRectangle, TileVector,
+		random_neighbor_eight, random_neighbor_four, ScreenPoint,
+		ScreenRectangle, ScreenVector, TilePoint, TileRectangle, TileVector,
 	},
 	creature::{Behavior, Creature, Species},
 	item::Item,
@@ -86,8 +89,14 @@ enum Perception {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Floor {
+	Stone,
+	Wood,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tile {
-	Floor,
+	Floor(Floor),
 	Wall,
 }
 
@@ -105,26 +114,18 @@ impl Tile {
 			Perception::Remembered => Color::from_rgba(255, 255, 255, 64),
 		};
 		let screen_tile = tile_layout.to_screen(coords);
-		match self {
-			Tile::Floor => {
-				canvas.draw(
-					&meshes.floor,
-					DrawParam::new()
-						.dest(screen_tile.pos)
-						.scale(screen_tile.size)
-						.color(color),
-				);
-			}
-			Tile::Wall => {
-				canvas.draw(
-					&meshes.wall,
-					DrawParam::new()
-						.dest(screen_tile.pos)
-						.scale(screen_tile.size)
-						.color(color),
-				);
-			}
-		}
+		let mesh = match self {
+			Tile::Floor(Floor::Stone) => &meshes.stone_floor,
+			Tile::Floor(Floor::Wood) => &meshes.wood_floor,
+			Tile::Wall => &meshes.wall,
+		};
+		canvas.draw(
+			mesh,
+			DrawParam::new()
+				.dest(screen_tile.pos)
+				.scale(screen_tile.size)
+				.color(color),
+		);
 	}
 }
 
@@ -146,35 +147,142 @@ pub struct Level {
 	memory: HashMap<TilePoint, Tile>,
 }
 
-impl Level {
-	pub fn generate(viewport: ScreenRectangle, rng: &mut Pcg32) -> Level {
-		struct Room {
-			center: TilePoint,
-			radius: TileVector,
-		}
+/// Configuration settings for level generation.
+pub struct GenerationConfig {
+	/// The region in screen space the level should cover.
+	pub viewport: ScreenRectangle,
+	/// The region in tile space the level should cover.
+	pub tileport: TileRectangle,
+	/// The minimum allowable proportion of all tiles within `tileport` to be
+	/// marked as floors. Additional rooms will be added until this proportion
+	/// is reached (up to a retry limit, in case additional rooms can't fit).
+	pub min_floor_ratio: f32,
+	/// Minimum width of a room's floor.
+	pub min_room_size: i32,
+	/// Maximum length of a room's floor.
+	pub max_room_size: i32,
+}
 
-		let rooms = std::iter::from_fn(|| {
-			Some(Room {
-				center: TilePoint::new(
-					rng.gen_range(0..64),
-					rng.gen_range(0..36),
-				),
-				radius: TileVector::new(
-					rng.gen_range(3..5),
-					rng.gen_range(3..5),
-				),
-			})
-		})
-		.take(5)
-		.collect::<Vec<_>>();
+struct Room {
+	floor: TileRectangle,
+}
+
+impl Room {
+	fn center(&self) -> TilePoint {
+		self.floor.pos + self.floor.size / 2
+	}
+}
+
+#[derive(PartialEq, Eq)]
+struct Neighbor {
+	index: usize,
+	distance: i32,
+}
+
+impl Ord for Neighbor {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.distance
+			.cmp(&other.distance)
+			.then(self.index.cmp(&other.index))
+	}
+}
+
+impl PartialOrd for Neighbor {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+const MAX_ROOM_PLACEMENT_RETRIES: u32 = 100;
+
+impl Level {
+	pub fn generate(config: GenerationConfig, rng: &mut Pcg32) -> Level {
+		// Leave a one-tile border around the floor for outer walls.
+		let floor = TileRectangle {
+			pos: TilePoint {
+				x: config.tileport.pos.x + 1,
+				y: config.tileport.pos.y + 1,
+			},
+			size: TileVector::new(
+				config.tileport.size.x - 2,
+				config.tileport.size.y - 2,
+			),
+		};
+
+		let mut rooms: Vec<Room> = Vec::new();
+
+		// Add rooms until the target floor coverage is reached.
+		let total_area = floor.area();
+		let mut floor_area = 0;
+		let mut retries = 0;
+		while (floor_area as f32 / total_area as f32) < config.min_floor_ratio {
+			let mut new_room = {
+				let size = TileVector::new(
+					rng.gen_range(config.min_room_size..=config.max_room_size),
+					rng.gen_range(config.min_room_size..=config.max_room_size),
+				);
+				Room {
+					floor: TileRectangle {
+						pos: TilePoint::new(
+							floor.pos.x
+								+ rng.gen_range(0..=floor.size.x - size.x),
+							floor.pos.y
+								+ rng.gen_range(0..=floor.size.y - size.y),
+						),
+						size,
+					},
+				}
+			};
+
+			// Nudge the room while it touches any existing rooms. (This uses an
+			// inefficient O(n^2) collision algorithm, but it should be good
+			// enough for the number of rooms we're dealing with.)
+			let nudge = random_neighbor_eight(rng);
+			let mut nudging = true;
+			while nudging {
+				nudging = false;
+				for room in rooms.iter() {
+					if new_room.floor.touching(room.floor) {
+						nudging = true;
+						new_room.floor.pos += nudge;
+					}
+				}
+			}
+
+			// Crop the room to fit within the tileport.
+			if let Some(intersection) = new_room.floor.intersection(floor) {
+				new_room.floor = intersection;
+			} else {
+				// If the room is completely outside the level, set its size to
+				// zero so it will be discarded.
+				new_room.floor.size = TileVector::new(0, 0);
+			}
+
+			// If the room is now too small, discard it and try again.
+			if new_room.floor.size.x < config.min_room_size
+				|| new_room.floor.size.y < config.min_room_size
+			{
+				retries += 1;
+				if retries > MAX_ROOM_PLACEMENT_RETRIES {
+					break;
+				} else {
+					continue;
+				}
+			}
+
+			retries = 0;
+			floor_area += new_room.floor.area();
+			rooms.push(new_room);
+		}
 
 		let mut terrain = HashMap::new();
 		let make_floor = |terrain: &mut HashMap<TilePoint, Tile>,
-		                  coords: TilePoint| {
+		                  coords: TilePoint,
+		                  floor: Floor| {
 			for x in coords.x - 1..=coords.x + 1 {
 				for y in coords.y - 1..=coords.y + 1 {
 					if x == coords.x && y == coords.y {
-						terrain.insert(coords, Tile::Floor);
+						terrain.insert(coords, Tile::Floor(floor));
 					} else {
 						terrain
 							.entry(TilePoint::new(x, y))
@@ -183,54 +291,62 @@ impl Level {
 				}
 			}
 		};
-		// Open the floor of each room.
-		for room in rooms.iter() {
-			let x_min = room.center.x - room.radius.x;
-			let x_max = room.center.x + room.radius.x;
-			let y_min = room.center.y - room.radius.y;
-			let y_max = room.center.y + room.radius.y;
-			for x in x_min..=x_max {
-				for y in y_min..=y_max {
-					make_floor(&mut terrain, TilePoint::new(x, y));
-				}
+
+		// TODO: This room connection algorithm (besides being inefficient) does
+		// not produce very good results and should be replaced (see
+		// docs/level-generation.md).
+
+		// Connect rooms via hallways.
+		let mut connected = HashSet::from([0]);
+		let mut unconnected = Vec::from_iter(0..rooms.len());
+		while let Some(i) = unconnected.pop() {
+			let room = &rooms[i];
+
+			// Connect this room to 1-3 of its nearest neighbors in the
+			// connected set. (This uses a very inefficient KNN algorithm, but
+			// again it suffices for now.)
+			let mut neighbors = BTreeSet::new();
+			for &j in connected.iter() {
+				let offset = room.center() - rooms[j].center();
+				let distance = offset.x.abs() + offset.y.abs();
+				neighbors.insert(Neighbor { index: j, distance });
 			}
-		}
-		// Connect each room to each other.
-		for (i, room1) in rooms.iter().enumerate() {
-			for room2 in rooms.iter().skip(i) {
-				let mut coords = room1.center;
-				while coords.x < room2.center.x {
-					make_floor(&mut terrain, coords);
+			for neighbor in neighbors.iter().take(rng.gen_range(1..=3)) {
+				let neighbor = &rooms[neighbor.index];
+				let mut coords = room.center();
+				while coords.x < neighbor.center().x {
+					make_floor(&mut terrain, coords, Floor::Stone);
 					coords.x += 1;
 				}
-				while coords.x > room2.center.x {
-					make_floor(&mut terrain, coords);
+				while coords.x > neighbor.center().x {
+					make_floor(&mut terrain, coords, Floor::Stone);
 					coords.x -= 1;
 				}
-				while coords.y < room2.center.y {
-					make_floor(&mut terrain, coords);
+				while coords.y < neighbor.center().y {
+					make_floor(&mut terrain, coords, Floor::Stone);
 					coords.y += 1;
 				}
-				while coords.y > room2.center.y {
-					make_floor(&mut terrain, coords);
+				while coords.y > neighbor.center().y {
+					make_floor(&mut terrain, coords, Floor::Stone);
 					coords.y -= 1;
+				}
+			}
+
+			connected.insert(i);
+		}
+
+		// Open the floor of each room.
+		for room in rooms.iter() {
+			for x in room.floor.pos.x..room.floor.pos.x + room.floor.size.x {
+				for y in room.floor.pos.y..room.floor.pos.y + room.floor.size.y
+				{
+					make_floor(&mut terrain, TilePoint::new(x, y), Floor::Wood);
 				}
 			}
 		}
 
-		let min_tile_x = terrain.keys().map(|coords| coords.x).min().unwrap();
-		let min_tile_y = terrain.keys().map(|coords| coords.y).min().unwrap();
-		let max_tile_x = terrain.keys().map(|coords| coords.x).max().unwrap();
-		let max_tile_y = terrain.keys().map(|coords| coords.y).max().unwrap();
-		let tileport = TileRectangle {
-			pos: TilePoint::new(min_tile_x, min_tile_y),
-			size: TileVector::new(
-				max_tile_x - min_tile_x + 1,
-				max_tile_y - min_tile_y + 1,
-			),
-		};
 		let mut level = Level {
-			tile_layout: TileLayout::new(viewport, tileport),
+			tile_layout: TileLayout::new(config.viewport, config.tileport),
 			terrain,
 			creatures: HashMap::new(),
 			items: HashMap::new(),
@@ -240,15 +356,14 @@ impl Level {
 
 		// Spawn some creatures.
 		for room in rooms {
-			level
-				.spawn(share(Creature {
-					species: Species::Goblin,
-					behavior: Behavior::AIControlled,
-					coords: room.center,
-					health: 3,
-					strength: 1,
-				}))
-				.unwrap();
+			// TODO: Handle collisions.
+			let _ = level.spawn(share(Creature {
+				species: Species::Goblin,
+				behavior: Behavior::AIControlled,
+				coords: room.center(),
+				health: 3,
+				strength: 1,
+			}));
 		}
 
 		level
@@ -257,7 +372,7 @@ impl Level {
 	/// Updates vision and memory using the given viewer `origin`.
 	pub fn update_vision(&mut self, origin: TilePoint) {
 		self.vision = vision::get_vision(origin, |coords: TilePoint| {
-			!matches!(self.terrain.get(&coords), Some(Tile::Floor))
+			!matches!(self.terrain.get(&coords), Some(Tile::Floor(_)))
 		});
 		for coords in &self.vision {
 			if let Some(tile) = self.terrain.get(coords) {
@@ -316,7 +431,7 @@ impl Level {
 			// Move in a random direction.
 			self.translate_creature(
 				&mut creature.borrow_mut(),
-				random_neighbor(rng),
+				random_neighbor_four(rng),
 			);
 		}
 	}
@@ -340,8 +455,9 @@ impl Level {
 			.terrain
 			.iter()
 			.find_map(|(&coords, &tile)| {
-				(tile == Tile::Floor && !self.creatures.contains_key(&coords))
-					.then_some(coords)
+				(matches!(tile, Tile::Floor(_))
+					&& !self.creatures.contains_key(&coords))
+				.then_some(coords)
 			})
 			.unwrap();
 		self.spawn(share(Creature {

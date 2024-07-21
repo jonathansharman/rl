@@ -6,7 +6,8 @@ use ggez::{
 
 pub struct Meshes {
 	pub wall: Mesh,
-	pub floor: Mesh,
+	pub stone_floor: Mesh,
+	pub wood_floor: Mesh,
 	// Objects
 	pub human: Mesh,
 	pub goblin: Mesh,
@@ -28,7 +29,7 @@ impl Meshes {
 				},
 				Color::from_rgb(128, 0, 0),
 			)?,
-			floor: Mesh::new_rectangle(
+			stone_floor: Mesh::new_rectangle(
 				ctx,
 				DrawMode::fill(),
 				Rect {
@@ -38,6 +39,17 @@ impl Meshes {
 					h: 1.0,
 				},
 				Color::from_rgb(128, 128, 128),
+			)?,
+			wood_floor: Mesh::new_rectangle(
+				ctx,
+				DrawMode::fill(),
+				Rect {
+					x: 0.0,
+					y: 0.0,
+					w: 1.0,
+					h: 1.0,
+				},
+				Color::from_rgb(96, 58, 32),
 			)?,
 			human: Mesh::new_ellipse(
 				ctx,

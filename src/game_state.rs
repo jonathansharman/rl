@@ -15,6 +15,7 @@ use crate::{
 };
 
 enum Action {
+	Wait,
 	Move { offset: TileVector },
 }
 
@@ -28,13 +29,14 @@ pub struct GameState {
 impl GameState {
 	fn act(&mut self, action: Action) {
 		match action {
+			Action::Wait => {}
 			Action::Move { offset } => {
 				self.level
 					.translate_creature(&mut self.player.borrow_mut(), offset);
-				self.level.update(&mut self.rng);
-				self.level.update_vision(self.player.borrow().coords);
 			}
 		}
+		self.level.update(&mut self.rng);
+		self.level.update_vision(self.player.borrow().coords);
 	}
 }
 
@@ -49,19 +51,21 @@ impl event::EventHandler<ggez::GameError> for GameState {
 		input: KeyInput,
 		_repeat: bool,
 	) -> GameResult {
-		// Disable input when dead.
+		let Some(keycode) = input.keycode else {
+			return Ok(());
+		};
+
+		if let KeyCode::Escape = keycode {
+			ctx.request_quit();
+		}
+
+		// Disable player actions when dead.
 		if self.player.borrow().dead() {
 			return Ok(());
 		}
 
-		let Some(keycode) = input.keycode else {
-			return Ok(());
-		};
 		let action = match keycode {
-			KeyCode::Escape => {
-				ctx.request_quit();
-				None
-			}
+			KeyCode::Space | KeyCode::Z => Some(Action::Wait),
 			KeyCode::Up => Some(Action::Move { offset: TILE_UP }),
 			KeyCode::Down => Some(Action::Move { offset: TILE_DOWN }),
 			KeyCode::Left => Some(Action::Move { offset: TILE_LEFT }),
