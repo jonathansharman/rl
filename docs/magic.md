@@ -11,8 +11,8 @@ encourage creativity. E.g., "give that fire" is better than "burn that", and
 
 Possible verbs:
 
-- Give NOUN to TARGET
-- Take NOUN from TARGET
+- Give NOUN's THING to TARGET
+- Take NOUN's THING from TARGET
 - Move TARGET to LOCATION
 - Make NOUN at LOCATION
 - Destroy NOUN at LOCATION
@@ -20,11 +20,15 @@ Possible verbs:
 
 Possible nouns:
 
-- Health
-  - This and other nouns could have built-in numerical variants, e.g. 3 health.
-    If there are additional numerical modifiers, they would multiply.
-- Poison
+- Character properties
+  - Health
+    - This and other nouns could have built-in numerical variants, e.g. 3
+      health. If there are additional numerical modifiers, they would multiply.
+  - Mana
+- Status effects
+  - Poison
 - Fire
+- [buff/debuff name]
 - [monster name]
 - [item name]
 - [tile name]
