@@ -368,7 +368,7 @@ impl Level {
 			// Ignore failure to spawn.
 			let _ = level.spawn(share(Creature::new(
 				species,
-				Behavior::AIControlled,
+				Behavior::Wandering,
 				coords,
 			)));
 		}
@@ -427,19 +427,12 @@ impl Level {
 	pub fn update(&mut self, rng: &mut Pcg32) {
 		let mut queue = self.creatures.values().cloned().collect::<Vec<_>>();
 		while let Some(creature) = queue.pop() {
-			// The player's creature is controlled separately.
-			if let Behavior::PlayerControlled = creature.borrow().behavior {
-				continue;
-			}
+			let mut creature = creature.borrow_mut();
 			// The creature may have died during iteration.
-			if creature.borrow().dead() {
+			if creature.dead() {
 				continue;
 			}
-			// Move in a random direction.
-			self.translate_creature(
-				&mut creature.borrow_mut(),
-				random_neighbor_four(rng),
-			);
+			creature.act(self, rng);
 		}
 	}
 
@@ -448,7 +441,9 @@ impl Level {
 	pub fn spawn_player(&mut self, rng: &mut Pcg32) -> Shared<Creature> {
 		self.spawn(share(Creature::new(
 			Species::Human,
-			Behavior::PlayerControlled,
+			// The player's creature is controlled separately, so just idle
+			// during level updates.
+			Behavior::Idle,
 			*self.unoccupied_coords().choose(rng).unwrap(),
 		)))
 		.unwrap()

@@ -1,6 +1,11 @@
 use ggez::graphics::{Canvas, DrawParam};
+use rand_pcg::Pcg32;
 
-use crate::{coordinates::TilePoint, level::TileLayout, meshes::Meshes};
+use crate::{
+	coordinates::{random_neighbor_four, TilePoint},
+	level::{Level, TileLayout},
+	meshes::Meshes,
+};
 
 /// A type of [`Creature`].
 #[derive(Clone, Copy, Debug)]
@@ -30,8 +35,8 @@ impl Species {
 
 #[derive(Debug)]
 pub enum Behavior {
-	PlayerControlled,
-	AIControlled,
+	Idle,
+	Wandering,
 }
 
 /// An animate being.
@@ -77,6 +82,16 @@ impl Creature {
 				.dest(tile_layout.pos + tile_layout.size / 2.0)
 				.scale(tile_layout.size),
 		);
+	}
+
+	pub fn act(&mut self, level: &mut Level, rng: &mut Pcg32) {
+		match self.behavior {
+			Behavior::Idle => {}
+			Behavior::Wandering => {
+				// Move in a random direction.
+				level.translate_creature(self, random_neighbor_four(rng));
+			}
+		}
 	}
 
 	pub fn take_damage(&mut self, damage: u32) {
