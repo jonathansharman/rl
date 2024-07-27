@@ -4,6 +4,7 @@ use std::{
 };
 
 use ggez::graphics::{Canvas, Color, DrawParam};
+use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_pcg::Pcg32;
 
@@ -354,16 +355,22 @@ impl Level {
 			memory: HashMap::new(),
 		};
 
-		// Spawn some creatures.
-		for room in rooms {
-			// TODO: Handle collisions.
-			let _ = level.spawn(share(Creature {
-				species: Species::Goblin,
-				behavior: Behavior::AIControlled,
-				coords: room.center(),
-				health: 3,
-				strength: 1,
-			}));
+		// Spawn creatures.
+		let mut unoccupied_coords = level.unoccupied_coords();
+		unoccupied_coords.shuffle(rng);
+		// TODO: Configure spawning in GenerationConfig.
+		for coords in unoccupied_coords.into_iter().take(10) {
+			let species = if rng.gen_range(0.0..1.0) < 0.15 {
+				Species::Ogre
+			} else {
+				Species::Goblin
+			};
+			// Ignore failure to spawn.
+			let _ = level.spawn(share(Creature::new(
+				species,
+				Behavior::AIControlled,
+				coords,
+			)));
 		}
 
 		level
@@ -436,37 +443,14 @@ impl Level {
 		}
 	}
 
-	fn spawn(
-		&mut self,
-		creature: Shared<Creature>,
-	) -> Result<Shared<Creature>, Collision> {
-		let coords = creature.borrow().coords;
-		if let Some(collision) = self.collision(coords) {
-			return Err(collision);
-		}
-		self.creatures.insert(coords, creature.clone());
-		Ok(creature)
-	}
-
-	/// Spawns the player character at an arbitrary open tile. If a spot can't
-	/// be found, this panics.
-	pub fn spawn_player(&mut self) -> Shared<Creature> {
-		let player_coords = self
-			.terrain
-			.iter()
-			.find_map(|(&coords, &tile)| {
-				(matches!(tile, Tile::Floor(_))
-					&& !self.creatures.contains_key(&coords))
-				.then_some(coords)
-			})
-			.unwrap();
-		self.spawn(share(Creature {
-			species: Species::Human,
-			behavior: Behavior::PlayerControlled,
-			coords: player_coords,
-			health: 10,
-			strength: 2,
-		}))
+	/// Spawns the player character at an arbitrary open tile. Panics if a spot
+	/// can't be found.
+	pub fn spawn_player(&mut self, rng: &mut Pcg32) -> Shared<Creature> {
+		self.spawn(share(Creature::new(
+			Species::Human,
+			Behavior::PlayerControlled,
+			*self.unoccupied_coords().choose(rng).unwrap(),
+		)))
 		.unwrap()
 	}
 
@@ -498,6 +482,27 @@ impl Level {
 		self.creatures.insert(to, removed);
 	}
 
+	/// All floor tile coordinates not occupied by a creature.
+	fn unoccupied_coords(&self) -> Vec<TilePoint> {
+		self.terrain
+			.keys()
+			.copied()
+			.filter(|&coords| self.collision(coords).is_none())
+			.collect()
+	}
+
+	fn spawn(
+		&mut self,
+		creature: Shared<Creature>,
+	) -> Result<Shared<Creature>, Collision> {
+		let coords = creature.borrow().coords;
+		if let Some(collision) = self.collision(coords) {
+			return Err(collision);
+		}
+		self.creatures.insert(coords, creature.clone());
+		Ok(creature)
+	}
+
 	/// The collision, if any, that would occur at `coords`.
 	fn collision(&self, coords: TilePoint) -> Option<Collision> {
 		let Some(tile) = self.terrain.get(&coords) else {
@@ -512,7 +517,7 @@ impl Level {
 	}
 
 	fn attack(&mut self, attacker: &mut Creature, defender: &mut Creature) {
-		defender.health -= attacker.strength;
+		defender.take_damage(attacker.strength);
 		println!(
 			"A {:?} hit a {:?} for {:?} damage!",
 			attacker.species, defender.species, attacker.strength

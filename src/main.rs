@@ -41,7 +41,7 @@ fn main() -> GameResult {
 		},
 		&mut rng,
 	);
-	let player = level.spawn_player();
+	let player = level.spawn_player(&mut rng);
 	level.update_vision(player.borrow().coords);
 
 	let (mut ctx, event_loop) =

@@ -11,6 +11,7 @@ pub struct Meshes {
 	// Objects
 	pub human: Mesh,
 	pub goblin: Mesh,
+	pub ogre: Mesh,
 	// Items
 	pub item: Mesh,
 }
@@ -67,6 +68,15 @@ impl Meshes {
 				0.5,
 				0.5,
 				1.0,
+				Color::from_rgb(0, 160, 0),
+			)?,
+			ogre: Mesh::new_ellipse(
+				ctx,
+				DrawMode::fill(),
+				Vec2::new(0.0, 0.0),
+				0.5,
+				0.5,
+				1.0,
 				Color::RED,
 			)?,
 			item: Mesh::new_rectangle(
@@ -78,7 +88,7 @@ impl Meshes {
 					w: 0.8,
 					h: 0.8,
 				},
-				Color::GREEN,
+				Color::YELLOW,
 			)?,
 		})
 	}
