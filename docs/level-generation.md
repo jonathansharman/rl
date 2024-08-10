@@ -32,11 +32,18 @@
    3. Crop the room to the level region.
    4. If the level is now too small, discard it and try again. Abort if this
       happens too many times in a row.
-2. Connect structures. Currently doing this by attaching each room to its 1-3
-   nearest neighbors in the connected set until all rooms are connected. This
-   produces undesirable results for a few reasons:
-   1. The nearest rooms in the connected set may still be far away.
-   2. Rooms that are directly adjacent are often not connected.
-   3. Rooms may be connected to each other multiple times.
+2. Connect rooms.
+   1. Sort room-room edges by distance.
+   2. While not all rooms are connected (determined using a disjoint sets data
+      structure) or the most recent connection was too close:
+      1. Get the next smallest edge.
+      2. Connect these rooms:
+         1. If they're aligned vertically or horizontally, use a random straight
+            hallway between them.
+         2. If they're diagonal from each other, use a random L-shaped connector
+            between their nearest two corners.
 
-I'll want to improve step 2 later.
+This produces pretty good results already. I may want to add more loopiness
+later, and sometimes the hallways (particularly the L-shaped ones) can cut
+through rooms. I'd especially like to prevent hallways from slicing across room
+walls, which could look pretty silly if I add doors at some point.

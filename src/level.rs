@@ -1,7 +1,4 @@
-use std::{
-	cmp::Ordering,
-	collections::{BTreeSet, HashMap, HashSet},
-};
+use std::collections::{HashMap, HashSet};
 
 use ggez::graphics::{Canvas, Color, DrawParam};
 use rand::seq::SliceRandom;
@@ -9,11 +6,13 @@ use rand::Rng;
 use rand_pcg::Pcg32;
 
 use crate::{
-	coordinates::{
-		random_neighbor_eight, random_neighbor_four, ScreenPoint,
-		ScreenRectangle, ScreenVector, TilePoint, TileRectangle, TileVector,
-	},
 	creature::{Behavior, Creature, Species},
+	disjoint_sets::DisjointSets,
+	geometry::{
+		random_neighbor_eight, RectangleIntersection, ScreenPoint,
+		ScreenRectangle, ScreenVector, TileIntersection, TilePoint,
+		TileRectangle, TileVector,
+	},
 	item::Item,
 	meshes::Meshes,
 	shared::{share, Shared},
@@ -92,6 +91,7 @@ enum Perception {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Floor {
 	Stone,
+	Grass,
 	Wood,
 }
 
@@ -117,6 +117,7 @@ impl Tile {
 		let screen_tile = tile_layout.to_screen(coords);
 		let mesh = match self {
 			Tile::Floor(Floor::Stone) => &meshes.stone_floor,
+			Tile::Floor(Floor::Grass) => &meshes.grass_floor,
 			Tile::Floor(Floor::Wood) => &meshes.wood_floor,
 			Tile::Wall => &meshes.wall,
 		};
@@ -166,32 +167,6 @@ pub struct GenerationConfig {
 
 struct Room {
 	floor: TileRectangle,
-}
-
-impl Room {
-	fn center(&self) -> TilePoint {
-		self.floor.pos + self.floor.size / 2
-	}
-}
-
-#[derive(PartialEq, Eq)]
-struct Neighbor {
-	index: usize,
-	distance: i32,
-}
-
-impl Ord for Neighbor {
-	fn cmp(&self, other: &Self) -> Ordering {
-		self.distance
-			.cmp(&other.distance)
-			.then(self.index.cmp(&other.index))
-	}
-}
-
-impl PartialOrd for Neighbor {
-	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-		Some(self.cmp(other))
-	}
 }
 
 const MAX_ROOM_PLACEMENT_RETRIES: u32 = 100;
@@ -251,7 +226,9 @@ impl Level {
 			}
 
 			// Crop the room to fit within the tileport.
-			if let Some(intersection) = new_room.floor.intersection(floor) {
+			if let RectangleIntersection::Real(intersection) =
+				new_room.floor.intersection(floor)
+			{
 				new_room.floor = intersection;
 			} else {
 				// If the room is completely outside the level, set its size to
@@ -293,56 +270,106 @@ impl Level {
 			}
 		};
 
-		// TODO: This room connection algorithm (besides being inefficient) does
-		// not produce very good results and should be replaced (see
-		// docs/level-generation.md).
-
-		// Connect rooms via hallways.
-		let mut connected = HashSet::from([0]);
-		let mut unconnected = Vec::from_iter(0..rooms.len());
-		while let Some(i) = unconnected.pop() {
-			let room = &rooms[i];
-
-			// Connect this room to 1-3 of its nearest neighbors in the
-			// connected set. (This uses a very inefficient KNN algorithm, but
-			// again it suffices for now.)
-			let mut neighbors = BTreeSet::new();
-			for &j in connected.iter() {
-				let offset = room.center() - rooms[j].center();
-				let distance = offset.x.abs() + offset.y.abs();
-				neighbors.insert(Neighbor { index: j, distance });
-			}
-			for neighbor in neighbors.iter().take(rng.gen_range(1..=3)) {
-				let neighbor = &rooms[neighbor.index];
-				let mut coords = room.center();
-				while coords.x < neighbor.center().x {
-					make_floor(&mut terrain, coords, Floor::Stone);
-					coords.x += 1;
-				}
-				while coords.x > neighbor.center().x {
-					make_floor(&mut terrain, coords, Floor::Stone);
-					coords.x -= 1;
-				}
-				while coords.y < neighbor.center().y {
-					make_floor(&mut terrain, coords, Floor::Stone);
-					coords.y += 1;
-				}
-				while coords.y > neighbor.center().y {
-					make_floor(&mut terrain, coords, Floor::Stone);
-					coords.y -= 1;
-				}
-			}
-
-			connected.insert(i);
-		}
-
 		// Open the floor of each room.
 		for room in rooms.iter() {
+			let floor = if rng.gen() { Floor::Wood } else { Floor::Grass };
 			for x in room.floor.pos.x..room.floor.pos.x + room.floor.size.x {
 				for y in room.floor.pos.y..room.floor.pos.y + room.floor.size.y
 				{
-					make_floor(&mut terrain, TilePoint::new(x, y), Floor::Wood);
+					make_floor(&mut terrain, TilePoint::new(x, y), floor);
 				}
+			}
+		}
+
+		// Build a forest of disjoint sets of connected rooms. Initially, each
+		// room is in its own singleton set.
+		let mut connected_rooms = DisjointSets::new(rooms.len());
+
+		// Build an ordered queue of distances between rooms.
+		struct Edge {
+			i: usize,
+			j: usize,
+			intersection: TileIntersection,
+		}
+		let mut edges = Vec::new();
+		for (i, room1) in rooms.iter().enumerate() {
+			for (j, room2) in rooms.iter().enumerate().skip(i) {
+				edges.push(Edge {
+					i,
+					j,
+					intersection: room1.floor.intersection(room2.floor),
+				});
+			}
+		}
+		edges.sort_by(|e1, e2| {
+			e2.intersection.distance().cmp(&e1.intersection.distance())
+		});
+
+		// Connect the closest two rooms until all rooms are connected.
+		while let Some(Edge { i, j, intersection }) = edges.pop() {
+			// Connect the rooms.
+			let waypoints = match intersection {
+				RectangleIntersection::Real(_) => {
+					// At this point all rooms should be nonintersecting, so
+					// this should be unreachable, but there wouldn't be any
+					// work to do anyway.
+					vec![]
+				}
+				RectangleIntersection::Horizontal(rect) => {
+					// Connect vertically.
+					let x = rng.gen_range(rect.pos.x..rect.pos.x + rect.size.x);
+					vec![
+						TilePoint::new(x, rect.pos.y),
+						TilePoint::new(x, rect.pos.y + rect.size.y - 1),
+					]
+				}
+				RectangleIntersection::Vertical(rect) => {
+					// Connect horizontally.
+					let y = rng.gen_range(rect.pos.y..rect.pos.y + rect.size.y);
+					vec![
+						TilePoint::new(rect.pos.x, y),
+						TilePoint::new(rect.pos.x + rect.size.x - 1, y),
+					]
+				}
+				RectangleIntersection::None(rect) => {
+					// Expand the rectangle one tile up and left so that [pos,
+					// pos + size] includes the rooms' corners.
+					let rect = TileRectangle {
+						pos: rect.pos - TileVector::new(1, 1),
+						size: rect.size + TileVector::new(1, 1),
+					};
+					// Determine if the rooms are diagonal "/" or "\".
+					let (room1, room2) = (&rooms[i], &rooms[j]);
+					let (p1, p3) = if (room1.floor.pos.x <= room2.floor.pos.x)
+						== (room1.floor.pos.y <= room2.floor.pos.y)
+					{
+						(rect.pos, rect.pos + rect.size)
+					} else {
+						let (mut p1, mut p3) = (rect.pos, rect.pos + rect.size);
+						(p1.y, p3.y) = (p3.y, p1.y);
+						(p1, p3)
+					};
+					// Connect the start and end via a random elbow.
+					let p2 = if rng.gen() {
+						TilePoint::new(p1.x, p3.y)
+					} else {
+						TilePoint::new(p3.x, p1.y)
+					};
+					vec![p1, p2, p3]
+				}
+			};
+			for waypoints in waypoints.windows(2) {
+				for coords in vision::line_between(waypoints[0], waypoints[1]) {
+					make_floor(&mut terrain, coords, Floor::Stone);
+				}
+			}
+
+			// Merge the two connection sets. Stop if all rooms are connected
+			// and the most recently merged rooms were far enough apart.
+			if connected_rooms.merge(i, j) == rooms.len()
+				&& intersection.distance() > 2
+			{
+				break;
 			}
 		}
 

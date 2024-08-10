@@ -1,6 +1,6 @@
 use ggez::graphics::{Canvas, DrawParam};
 
-use crate::{coordinates::TilePoint, level::TileLayout, meshes::Meshes};
+use crate::{geometry::TilePoint, level::TileLayout, meshes::Meshes};
 
 #[derive(Debug)]
 pub struct Item {

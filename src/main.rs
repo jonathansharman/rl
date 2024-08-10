@@ -1,17 +1,18 @@
-mod coordinates;
 mod creature;
+mod disjoint_sets;
 mod game_state;
+mod geometry;
 mod item;
 mod level;
 mod meshes;
 mod shared;
 mod vision;
 
-use coordinates::{
+use game_state::GameState;
+use geometry::{
 	ScreenPoint, ScreenRectangle, ScreenVector, TilePoint, TileRectangle,
 	TileVector,
 };
-use game_state::GameState;
 use ggez::{
 	conf::{WindowMode, WindowSetup},
 	event, GameResult,

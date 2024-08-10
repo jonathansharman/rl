@@ -2,7 +2,69 @@ use std::collections::HashSet;
 
 use num_rational::Rational32;
 
-use crate::coordinates::TilePoint;
+use crate::geometry::{TilePoint, TileVector};
+
+struct LineOfSightIterator {
+	p1: TilePoint,
+	p2: TilePoint,
+	d: TileVector,
+	sign: TileVector,
+	error: i32,
+	has_next: bool,
+}
+
+impl LineOfSightIterator {
+	fn iterate(&mut self) {
+		if self.p1 == self.p2 {
+			return self.has_next = false;
+		}
+		let error2 = 2 * self.error;
+		if error2 >= self.d.y {
+			if self.p1.x == self.p2.x {
+				return self.has_next = false;
+			}
+			self.error += self.d.y;
+			self.p1.x += self.sign.x;
+		}
+		if error2 <= self.d.x {
+			if self.p1.y == self.p2.y {
+				return self.has_next = false;
+			}
+			self.error += self.d.x;
+			self.p1.y += self.sign.y;
+		}
+	}
+}
+
+impl Iterator for LineOfSightIterator {
+	type Item = TilePoint;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.has_next.then_some({
+			let result = self.p1;
+			self.iterate();
+			result
+		})
+	}
+}
+
+/// The set of points on the segment between `p1` and `p2` inclusive,
+/// implemented using Bresenham's line algorithm.
+pub fn line_between(
+	p1: TilePoint,
+	p2: TilePoint,
+) -> impl Iterator<Item = TilePoint> {
+	let offset = p2 - p1;
+	let d = TileVector::new(offset.x.abs(), -offset.y.abs());
+	LineOfSightIterator {
+		p1,
+		p2,
+		d,
+		sign: TileVector::new(offset.x.signum(), offset.y.signum()),
+		error: d.x + d.y,
+		has_next: true,
+	}
+}
 
 /// Computes the set of tile coordinates visible from the given `origin`,
 /// blocked by any tiles where `is_blocking` returns true.

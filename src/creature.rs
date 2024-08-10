@@ -2,7 +2,7 @@ use ggez::graphics::{Canvas, DrawParam};
 use rand_pcg::Pcg32;
 
 use crate::{
-	coordinates::{random_neighbor_four, TilePoint},
+	geometry::{random_neighbor_four, TilePoint},
 	level::{Level, TileLayout},
 	meshes::Meshes,
 };

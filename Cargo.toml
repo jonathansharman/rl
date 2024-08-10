@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 ggez = "0.9.3"
 num-rational = "0.4.2"
+num-traits = "0.2.19"
 rand = "0.8.5"
 rand_pcg = "0.3.1"
 rand_seeder = "0.2.3"

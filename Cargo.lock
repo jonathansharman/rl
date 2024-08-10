@@ -2050,6 +2050,7 @@ version = "0.1.0"
 dependencies = [
  "ggez",
  "num-rational",
+ "num-traits",
  "rand",
  "rand_pcg",
  "rand_seeder",

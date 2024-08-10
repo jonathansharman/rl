@@ -7,6 +7,7 @@ use ggez::{
 pub struct Meshes {
 	pub wall: Mesh,
 	pub stone_floor: Mesh,
+	pub grass_floor: Mesh,
 	pub wood_floor: Mesh,
 	// Objects
 	pub human: Mesh,
@@ -40,6 +41,17 @@ impl Meshes {
 					h: 1.0,
 				},
 				Color::from_rgb(128, 128, 128),
+			)?,
+			grass_floor: Mesh::new_rectangle(
+				ctx,
+				DrawMode::fill(),
+				Rect {
+					x: 0.0,
+					y: 0.0,
+					w: 1.0,
+					h: 1.0,
+				},
+				Color::from_rgb(35, 80, 25),
 			)?,
 			wood_floor: Mesh::new_rectangle(
 				ctx,

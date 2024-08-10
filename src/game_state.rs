@@ -7,7 +7,7 @@ use ggez::{
 use rand_pcg::Pcg32;
 
 use crate::{
-	coordinates::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
+	geometry::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
 	creature::Creature,
 	level::Level,
 	meshes::Meshes,
