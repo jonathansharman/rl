@@ -40,27 +40,30 @@ pub const TILE_UP_RIGHT: TileVector = TileVector::new(1, -1);
 pub const TILE_DOWN_LEFT: TileVector = TileVector::new(-1, 1);
 pub const TILE_DOWN_RIGHT: TileVector = TileVector::new(1, 1);
 
+/// Offsets to a tile's nearest cardinal neighbors.
+pub const NEIGHBOR_OFFSETS_FOUR: [TileVector; 4] =
+	[TILE_UP, TILE_DOWN, TILE_LEFT, TILE_RIGHT];
+
+/// Offsets to a tile's nearest cardinal and diagonal neighbors.
+pub const NEIGHBORS_OFFSETS_EIGHT: [TileVector; 8] = [
+	TILE_UP,
+	TILE_DOWN,
+	TILE_LEFT,
+	TILE_RIGHT,
+	TILE_UP_LEFT,
+	TILE_UP_RIGHT,
+	TILE_DOWN_LEFT,
+	TILE_DOWN_RIGHT,
+];
+
 /// Offset to a random adjacent tile, excluding diagonals.
-pub fn random_neighbor_four(rng: &mut Pcg32) -> TileVector {
-	*[TILE_UP, TILE_DOWN, TILE_LEFT, TILE_RIGHT]
-		.choose(rng)
-		.unwrap()
+pub fn random_neighbor_offset_four(rng: &mut Pcg32) -> TileVector {
+	*NEIGHBOR_OFFSETS_FOUR.choose(rng).unwrap()
 }
 
 /// Offset to a random adjacent tile, including diagonals.
-pub fn random_neighbor_eight(rng: &mut Pcg32) -> TileVector {
-	*[
-		TILE_UP,
-		TILE_DOWN,
-		TILE_LEFT,
-		TILE_RIGHT,
-		TILE_UP_LEFT,
-		TILE_UP_RIGHT,
-		TILE_DOWN_LEFT,
-		TILE_DOWN_RIGHT,
-	]
-	.choose(rng)
-	.unwrap()
+pub fn random_neighbor_offset_eight(rng: &mut Pcg32) -> TileVector {
+	*NEIGHBORS_OFFSETS_EIGHT.choose(rng).unwrap()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

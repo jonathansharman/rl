@@ -1,4 +1,5 @@
 mod creature;
+mod dijkstra_map;
 mod disjoint_sets;
 mod game_state;
 mod geometry;
@@ -43,6 +44,7 @@ fn main() -> GameResult {
 		&mut rng,
 	);
 	let player = level.spawn_player(&mut rng);
+	level.update_dijkstra_maps();
 	level.update_vision(player.borrow().coords);
 
 	let (mut ctx, event_loop) =

@@ -6,10 +6,11 @@ use rand::Rng;
 use rand_pcg::Pcg32;
 
 use crate::{
-	creature::{Behavior, Creature, Species},
+	creature::{Behavior, Creature, Faction, Species},
+	dijkstra_map::DijkstraMap,
 	disjoint_sets::DisjointSets,
 	geometry::{
-		random_neighbor_eight, RectangleIntersection, ScreenPoint,
+		random_neighbor_offset_eight, RectangleIntersection, ScreenPoint,
 		ScreenRectangle, ScreenVector, TileIntersection, TilePoint,
 		TileRectangle, TileVector,
 	},
@@ -138,6 +139,12 @@ pub enum Collision {
 	Object(Shared<Creature>),
 }
 
+/// A set of Dijkstra maps for points of interest within a [`Level`].
+#[derive(Default)]
+pub struct DijkstraMaps {
+	pub enemies: HashMap<Faction, DijkstraMap>,
+}
+
 pub struct Level {
 	tile_layout: TileLayout,
 	terrain: HashMap<TilePoint, Tile>,
@@ -147,6 +154,7 @@ pub struct Level {
 	vision: HashSet<TilePoint>,
 	/// Tiles the player remembers seeing.
 	memory: HashMap<TilePoint, Tile>,
+	dijkstra_maps: DijkstraMaps,
 }
 
 /// Configuration settings for level generation.
@@ -213,7 +221,7 @@ impl Level {
 			// Nudge the room while it touches any existing rooms. (This uses an
 			// inefficient O(n^2) collision algorithm, but it should be good
 			// enough for the number of rooms we're dealing with.)
-			let nudge = random_neighbor_eight(rng);
+			let nudge = random_neighbor_offset_eight(rng);
 			let mut nudging = true;
 			while nudging {
 				nudging = false;
@@ -380,6 +388,7 @@ impl Level {
 			items: HashMap::new(),
 			vision: HashSet::new(),
 			memory: HashMap::new(),
+			dijkstra_maps: DijkstraMaps::default(),
 		};
 
 		// Spawn creatures.
@@ -394,8 +403,9 @@ impl Level {
 			};
 			// Ignore failure to spawn.
 			let _ = level.spawn(share(Creature::new(
+				Faction::Enemy,
 				species,
-				Behavior::Wandering,
+				Behavior::Patrolling,
 				coords,
 			)));
 		}
@@ -403,10 +413,49 @@ impl Level {
 		level
 	}
 
+	fn update_enemies_dijkstra_map(&mut self, faction: Faction) {
+		self.dijkstra_maps.enemies.insert(
+			faction,
+			DijkstraMap::new(
+				self.terrain.keys().copied(),
+				|coords| {
+					self.creatures.get(coords).is_some_and(|creature| {
+						creature.borrow().faction != faction
+					})
+				},
+				|coords| {
+					self.collision(coords).is_some_and(|collision| {
+						if let Collision::Object(other) = collision {
+							// Creatures can't actually pass through allies, but
+							// we'll act as though they can for the purpose of
+							// pathfinding. This will allow enemies to pile up
+							// at choke points when attempting to reach goals.
+							other.borrow().faction != faction
+						} else {
+							// Hard collision.
+							true
+						}
+					})
+				},
+			),
+		);
+	}
+
+	/// Builds or rebuilds the level's Dijkstra maps.
+	pub fn update_dijkstra_maps(&mut self) {
+		self.update_enemies_dijkstra_map(Faction::Ally);
+		self.update_enemies_dijkstra_map(Faction::Enemy);
+	}
+
+	/// A set of Dijkstra maps for points of interest within the level.
+	pub fn dijkstra_maps(&self) -> &DijkstraMaps {
+		&self.dijkstra_maps
+	}
+
 	/// Updates vision and memory using the given viewer `origin`.
 	pub fn update_vision(&mut self, origin: TilePoint) {
-		self.vision = vision::get_vision(origin, |coords: TilePoint| {
-			!matches!(self.terrain.get(&coords), Some(Tile::Floor(_)))
+		self.vision = vision::get_vision(origin, |coords: &TilePoint| {
+			!matches!(self.terrain.get(coords), Some(Tile::Floor(_)))
 		});
 		for coords in &self.vision {
 			if let Some(tile) = self.terrain.get(coords) {
@@ -467,6 +516,7 @@ impl Level {
 	/// can't be found.
 	pub fn spawn_player(&mut self, rng: &mut Pcg32) -> Shared<Creature> {
 		self.spawn(share(Creature::new(
+			Faction::Ally,
 			Species::Human,
 			// The player's creature is controlled separately, so just idle
 			// during level updates.
@@ -491,11 +541,17 @@ impl Level {
 	/// The creature must exist in the level, or this panics.
 	pub fn move_creature(&mut self, creature: &mut Creature, to: TilePoint) {
 		let from = creature.coords;
-		if let Some(collision) = self.collision(to) {
+		if from == to {
+			return;
+		}
+		if let Some(collision) = self.collision(&to) {
 			let Collision::Object(other) = collision else {
 				return;
 			};
-			self.attack(creature, &mut other.borrow_mut());
+			let other = &mut other.borrow_mut();
+			if creature.faction != other.faction {
+				self.attack(creature, other);
+			}
 			return;
 		}
 		// The removed creature should be a reference to the creature parameter.
@@ -509,7 +565,7 @@ impl Level {
 		self.terrain
 			.keys()
 			.copied()
-			.filter(|&coords| self.collision(coords).is_none())
+			.filter(|coords| self.collision(coords).is_none())
 			.collect()
 	}
 
@@ -518,7 +574,7 @@ impl Level {
 		creature: Shared<Creature>,
 	) -> Result<Shared<Creature>, Collision> {
 		let coords = creature.borrow().coords;
-		if let Some(collision) = self.collision(coords) {
+		if let Some(collision) = self.collision(&coords) {
 			return Err(collision);
 		}
 		self.creatures.insert(coords, creature.clone());
@@ -526,23 +582,23 @@ impl Level {
 	}
 
 	/// The collision, if any, that would occur at `coords`.
-	fn collision(&self, coords: TilePoint) -> Option<Collision> {
-		let Some(tile) = self.terrain.get(&coords) else {
+	fn collision(&self, coords: &TilePoint) -> Option<Collision> {
+		let Some(tile) = self.terrain.get(coords) else {
 			return Some(Collision::OutOfBounds);
 		};
 		if let Tile::Wall = tile {
 			return Some(Collision::Tile(*tile));
 		}
 		self.creatures
-			.get(&coords)
+			.get(coords)
 			.map(|level_object| Collision::Object(level_object.clone()))
 	}
 
 	fn attack(&mut self, attacker: &mut Creature, defender: &mut Creature) {
-		defender.take_damage(attacker.strength);
+		defender.take_damage(attacker.stats.strength);
 		println!(
 			"A {:?} hit a {:?} for {:?} damage!",
-			attacker.species, defender.species, attacker.strength
+			attacker.species, defender.species, attacker.stats.strength
 		);
 		if defender.dead() {
 			println!("The {:?} died!", defender.species);

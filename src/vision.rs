@@ -73,7 +73,7 @@ pub fn line_between(
 /// which implements symmetric shadowcasting with diamond-shaped walls.
 pub fn get_vision(
 	origin: TilePoint,
-	is_blocking: impl Fn(TilePoint) -> bool,
+	is_blocking: impl Fn(&TilePoint) -> bool,
 ) -> HashSet<TilePoint> {
 	let mut vision = HashSet::from([origin]);
 
@@ -85,13 +85,13 @@ pub fn get_vision(
 	] {
 		let is_wall = |coords: Option<QuadrantPoint>| -> bool {
 			coords.is_some_and(|coords| {
-				is_blocking(quadrant.transform(origin, coords))
+				is_blocking(&quadrant.transform(origin, coords))
 			})
 		};
 
 		let is_floor = |coords: Option<QuadrantPoint>| {
 			coords.is_some_and(|coords| {
-				!is_blocking(quadrant.transform(origin, coords))
+				!is_blocking(&quadrant.transform(origin, coords))
 			})
 		};
 

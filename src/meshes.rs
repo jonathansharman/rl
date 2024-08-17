@@ -71,7 +71,7 @@ impl Meshes {
 				0.5,
 				0.5,
 				1.0,
-				Color::BLUE,
+				Color::from_rgb(0, 192, 255),
 			)?,
 			goblin: Mesh::new_ellipse(
 				ctx,

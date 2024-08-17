@@ -7,8 +7,8 @@ use ggez::{
 use rand_pcg::Pcg32;
 
 use crate::{
-	geometry::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
 	creature::Creature,
+	geometry::{TileVector, TILE_DOWN, TILE_LEFT, TILE_RIGHT, TILE_UP},
 	level::Level,
 	meshes::Meshes,
 	shared::Shared,
@@ -35,6 +35,7 @@ impl GameState {
 					.translate_creature(&mut self.player.borrow_mut(), offset);
 			}
 		}
+		self.level.update_dijkstra_maps();
 		self.level.update(&mut self.rng);
 		self.level.update_vision(self.player.borrow().coords);
 	}
